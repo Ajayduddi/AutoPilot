@@ -1,0 +1,407 @@
+import { WorkflowRepo } from '../repositories/workflow.repo';
+import type { CreateWorkflowInput, UpdateWorkflowInput } from '../repositories/workflow.repo';
+import { eventBus, EventTypes } from './event.service';
+import { NotificationService } from './notification.service';
+import { ContextService } from './context.service';
+import { WorkflowProviderFactory } from '../providers/workflow/factory';
+import type {
+  WorkflowRunStatus,
+  WorkflowTriggerSource,
+  WorkflowProvider,
+  WorkflowExecutionRequest,
+  Workflow,
+} from '@chat-automation/shared';
+import { randomUUID } from 'crypto';
+
+const CALLBACK_BASE_URL = process.env.CALLBACK_BASE_URL || 'http://localhost:3000';
+
+// ─────────────────────────────────────────────────────────────
+//  Secret redaction helpers
+// ─────────────────────────────────────────────────────────────
+
+const SENSITIVE_KEYS = ['apiKey', 'api_key', 'secret', 'token', 'password', 'credential'];
+
+function redactSecrets(obj: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!obj) return null;
+  const redacted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (SENSITIVE_KEYS.some(sk => key.toLowerCase().includes(sk.toLowerCase()))) {
+      redacted[key] = '***REDACTED***';
+    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      redacted[key] = redactSecrets(value as Record<string, unknown>);
+    } else {
+      redacted[key] = value;
+    }
+  }
+  return redacted;
+}
+
+/** Strip sensitive fields from a workflow before API response */
+function sanitizeWorkflow(wf: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...wf };
+  if (result.authConfig) {
+    result.authConfig = redactSecrets(result.authConfig as Record<string, unknown>);
+  }
+  return result;
+}
+
+/** Check if a workflow is accessible by a given user */
+function isAccessible(wf: { visibility: string; ownerUserId: string | null }, requestingUserId?: string): boolean {
+  if (wf.visibility === 'public') return true;
+  if (!wf.ownerUserId) return true; // No owner = accessible (single-user compat)
+  if (requestingUserId && wf.ownerUserId === requestingUserId) return true;
+  return false;
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Service
+// ─────────────────────────────────────────────────────────────
+
+export class WorkflowService {
+  // ── CRUD ─────────────────────────────────────────────────────
+
+  static async create(data: Omit<CreateWorkflowInput, 'id'>) {
+    const workflow = await WorkflowRepo.createWorkflow({ ...data, id: randomUUID() });
+    return sanitizeWorkflow(workflow);
+  }
+
+  static async update(id: string, data: UpdateWorkflowInput) {
+    const existing = await WorkflowRepo.getWorkflowById(id);
+    if (!existing) return null;
+    const workflow = await WorkflowRepo.updateWorkflow(id, data);
+    return sanitizeWorkflow(workflow);
+  }
+
+  static async archive(id: string) {
+    const existing = await WorkflowRepo.getWorkflowById(id);
+    if (!existing) return null;
+    const workflow = await WorkflowRepo.archiveWorkflow(id);
+    return sanitizeWorkflow(workflow);
+  }
+
+  static async delete(id: string) {
+    const existing = await WorkflowRepo.getWorkflowById(id);
+    if (!existing) return null;
+    return WorkflowRepo.deleteWorkflow(id);
+  }
+
+  // ── Queries (API-facing — sanitized, visibility enforced) ───
+
+  static async getAll(filters?: {
+    provider?: string;
+    visibility?: string;
+    enabled?: boolean;
+    archived?: boolean;
+    search?: string;
+  }) {
+    const workflows = await WorkflowRepo.getAllWorkflows(filters as any);
+    return workflows.map(sanitizeWorkflow);
+  }
+
+  /**
+   * Get workflow by ID with visibility enforcement.
+   * Returns sanitized workflow (secrets redacted).
+   */
+  static async getById(id: string, requestingUserId?: string) {
+    const workflow = await WorkflowRepo.getWorkflowById(id);
+    if (!workflow) return null;
+    if (!isAccessible(workflow, requestingUserId)) return null;
+    return sanitizeWorkflow(workflow);
+  }
+
+  static async getByKey(key: string, requestingUserId?: string) {
+    const workflow = await WorkflowRepo.getWorkflowByKey(key);
+    if (!workflow) return null;
+    if (!isAccessible(workflow, requestingUserId)) return null;
+    return sanitizeWorkflow(workflow);
+  }
+
+  /**
+   * List workflows with visibility enforcement (sanitized).
+   */
+  static async listAccessible(
+    requestingUserId: string,
+    filters?: {
+      provider?: string;
+      visibility?: string;
+      enabled?: boolean;
+      archived?: boolean;
+      search?: string;
+    },
+  ) {
+    const all = await WorkflowRepo.getAllWorkflows(filters as any);
+    return all
+      .filter(wf => isAccessible(wf, requestingUserId))
+      .map(sanitizeWorkflow);
+  }
+
+  // ── Internal queries (raw Drizzle types — for service-to-service use) ──
+
+  /** Get raw workflow by key — for orchestrator/internal services */
+  static async getByKeyInternal(key: string) {
+    return WorkflowRepo.getWorkflowByKey(key);
+  }
+
+  /** Get raw workflow by ID — for orchestrator/internal services */
+  static async getByIdInternal(id: string) {
+    return WorkflowRepo.getWorkflowById(id);
+  }
+
+  // ── Execution ────────────────────────────────────────────────
+
+  /**
+   * Execute a workflow through the unified provider adapter pipeline.
+   */
+  static async execute(
+    workflowId: string,
+    workflowKey: string,
+    provider: string,
+    executionEndpoint: string,
+    userId: string,
+    traceId: string,
+    triggerSource: WorkflowTriggerSource,
+    payload: any,
+    threadId?: string,
+  ) {
+    const runId = randomUUID();
+
+    // 1. Create tracking row before dispatch
+    const run = await WorkflowRepo.createRun({
+      id: runId,
+      workflowId,
+      workflowKey,
+      provider: provider as WorkflowProvider,
+      traceId,
+      userId,
+      threadId,
+      triggerSource,
+      inputPayload: payload || {},
+      status: 'queued',
+    });
+
+    // Announce the new run to clients
+    eventBus.emit(EventTypes.WORKFLOW_RUN_UPDATED, run);
+
+    // 2. Dispatch through provider adapter (async — don't await)
+    this.dispatchViaAdapter(runId, workflowId, workflowKey, provider as WorkflowProvider, executionEndpoint, userId, traceId, triggerSource, payload, threadId);
+
+    return run;
+  }
+
+  /**
+   * Execute a workflow and await its completion.
+   * Returns the final run record with status/output/errors.
+   * Used by the orchestrator to produce result blocks in chat.
+   */
+  static async executeAndAwait(
+    workflowId: string,
+    workflowKey: string,
+    provider: string,
+    executionEndpoint: string,
+    userId: string,
+    traceId: string,
+    triggerSource: WorkflowTriggerSource,
+    payload: any,
+    threadId?: string,
+  ) {
+    const runId = randomUUID();
+
+    // 1. Create tracking row before dispatch
+    const run = await WorkflowRepo.createRun({
+      id: runId,
+      workflowId,
+      workflowKey,
+      provider: provider as WorkflowProvider,
+      traceId,
+      userId,
+      threadId,
+      triggerSource,
+      inputPayload: payload || {},
+      status: 'queued',
+    });
+
+    eventBus.emit(EventTypes.WORKFLOW_RUN_UPDATED, run);
+
+    // 2. Dispatch through provider adapter — AWAIT completion
+    await this.dispatchViaAdapter(
+      runId, workflowId, workflowKey, provider as WorkflowProvider,
+      executionEndpoint, userId, traceId, triggerSource, payload, threadId,
+    );
+
+    // 3. Fetch the final run record with updated status/output
+    const finalRun = await WorkflowRepo.getRunById(runId);
+    return finalRun || run;
+  }
+
+  /**
+   * Dispatch execution through the resolved provider adapter.
+   */
+  private static async dispatchViaAdapter(
+    runId: string,
+    workflowId: string,
+    workflowKey: string,
+    provider: WorkflowProvider,
+    executionEndpoint: string,
+    userId: string,
+    traceId: string,
+    triggerSource: WorkflowTriggerSource,
+    payload: any,
+    threadId?: string,
+  ): Promise<void> {
+    try {
+      // Update status to running
+      await WorkflowRepo.updateRunStatus(runId, 'running');
+      eventBus.emit(EventTypes.WORKFLOW_RUN_UPDATED, { id: runId, status: 'running' });
+      eventBus.emit(EventTypes.WORKFLOW_TRIGGERED, { runId, workflowId, workflowKey, provider });
+      
+      NotificationService.notify(userId, {
+        type: 'workflow_event',
+        title: `Workflow Started: ${workflowKey}`,
+        message: `Run ${runId.slice(0, 8)} triggered via ${triggerSource}`,
+        runId,
+      }).catch(err => console.error('[NotificationService] failed:', err));
+
+      // Resolve adapter
+      const adapter = WorkflowProviderFactory.getAdapter(provider);
+
+      // Build workflow object for adapter (need raw — not sanitized)
+      const workflow = await WorkflowRepo.getWorkflowById(workflowId) as unknown as Workflow;
+      if (!workflow) {
+        throw new Error(`Workflow ${workflowId} not found during dispatch`);
+      }
+
+      // Build standard execution request
+      const request: WorkflowExecutionRequest = {
+        traceId,
+        workflowKey,
+        userId,
+        source: triggerSource,
+        input: payload || {},
+        callbackUrl: `${CALLBACK_BASE_URL}/api/webhooks/callback`,
+        meta: { runId, threadId },
+      };
+
+      // Trigger through adapter
+      const result = await adapter.triggerWorkflow(workflow, request);
+
+      // Update run with result
+      if (result.status === 'failed') {
+        await this.updateRunStatus(runId, 'failed', null, result.raw, result.error as any);
+        NotificationService.notify(userId, {
+          type: 'workflow_event',
+          title: `Workflow Failed: ${workflowKey}`,
+          message: `Run ${runId.slice(0, 8)} failed during execution.`,
+          runId,
+        }).catch(() => {});
+
+        // Index failure into context memory
+        ContextService.indexWorkflowRun({
+          threadId,
+          userId,
+          workflowRunId: runId,
+          workflowId,
+          workflowKey,
+          workflowName: workflow.name,
+          provider: provider as string,
+          traceId,
+          triggerSource: triggerSource as string,
+          status: 'failed',
+          errorSummary: result.error?.error as string || result.error?.message as string || 'Unknown error',
+        }).catch(err => console.error('[WorkflowService] Context indexing failed:', err));
+      } else {
+        await this.updateRunStatus(runId, result.status, result.result, result.raw);
+        NotificationService.notify(userId, {
+          type: 'workflow_event',
+          title: `Workflow Completed: ${workflowKey}`,
+          message: `Run ${runId.slice(0, 8)} finished successfully.`,
+          runId,
+        }).catch(() => {});
+
+        // Index success into context memory
+        ContextService.indexWorkflowRun({
+          threadId,
+          userId,
+          workflowRunId: runId,
+          workflowId,
+          workflowKey,
+          workflowName: workflow.name,
+          provider: provider as string,
+          traceId,
+          triggerSource: triggerSource as string,
+          status: result.status,
+          resultSummary: result.result?.summary,
+          resultData: result.result?.data ?? (result.result as Record<string, unknown> | null),
+        }).catch(err => console.error('[WorkflowService] Context indexing failed:', err));
+      }
+
+      // Update workflow's last-run
+      WorkflowRepo.updateLastRun(workflowId, result.status).catch(() => {});
+
+    } catch (err) {
+      console.error(`[WorkflowService] Dispatch failed for run ${runId}:`, err);
+      const errorPayload = { error: err instanceof Error ? err.message : String(err) };
+      await this.updateRunStatus(runId, 'failed', undefined, undefined, errorPayload).catch(() => {});
+      WorkflowRepo.updateLastRun(workflowId, 'failed').catch(() => {});
+      
+      NotificationService.notify(userId, {
+        type: 'workflow_event',
+        title: `Workflow Dispatch Failed: ${workflowKey}`,
+        message: `Run ${runId.slice(0, 8)} completely failed: ${errorPayload.error}`,
+        runId,
+      }).catch(() => {});
+
+      // Index dispatch failure into context memory
+      ContextService.indexWorkflowRun({
+        threadId,
+        userId,
+        workflowRunId: runId,
+        workflowId,
+        workflowKey,
+        workflowName: workflowKey, // name not available at this point
+        provider: provider as string,
+        traceId,
+        triggerSource: triggerSource as string,
+        status: 'failed',
+        errorSummary: errorPayload.error,
+      }).catch(err => console.error('[WorkflowService] Context indexing failed:', err));
+    }
+  }
+
+  // ── Run management ───────────────────────────────────────────
+
+  static async updateRunStatus(
+    runId: string,
+    status: WorkflowRunStatus,
+    normalizedOutput?: any,
+    rawProviderResponse?: any,
+    errorPayload?: any,
+  ) {
+    const run = await WorkflowRepo.updateRunStatus(
+      runId, status, normalizedOutput, rawProviderResponse, errorPayload,
+    );
+    eventBus.emit(EventTypes.WORKFLOW_RUN_UPDATED, run);
+    return run;
+  }
+
+  /** Validate a workflow's configuration against its provider adapter */
+  static async validateWorkflowConfig(workflowId: string) {
+    const workflow = await WorkflowRepo.getWorkflowById(workflowId) as unknown as Workflow;
+    if (!workflow) {
+      return { valid: false, errors: ['Workflow not found'], warnings: [] };
+    }
+    const adapter = WorkflowProviderFactory.getAdapter(workflow.provider);
+    return adapter.validateConfig(workflow);
+  }
+
+  static async getRunsByWorkflowId(workflowId: string, limit = 50) {
+    return WorkflowRepo.getRunsByWorkflowId(workflowId, limit);
+  }
+
+  static async getRunById(runId: string) {
+    return WorkflowRepo.getRunById(runId);
+  }
+
+  static async getRunByTraceId(traceId: string) {
+    return WorkflowRepo.getRunByTraceId(traceId);
+  }
+}

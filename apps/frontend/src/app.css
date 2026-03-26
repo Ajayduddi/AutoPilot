@@ -1,0 +1,415 @@
+/* Library markdown styles */
+@import "github-markdown-css/github-markdown.css";
+@import "highlight.js/styles/github-dark.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-neutral-900 text-neutral-100 antialiased h-screen overflow-hidden;
+  }
+}
+
+@layer utilities {
+  .scrollbar-custom::-webkit-scrollbar,
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-custom::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-custom::-webkit-scrollbar-thumb,
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(82, 82, 82, 0.4);
+    border-radius: 20px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+  }
+  .scrollbar-custom::-webkit-scrollbar-thumb:hover,
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(115, 115, 115, 0.6);
+  }
+}
+
+/* ─── Dark-mode <select> and <option> ──────────────────────────────────────── */
+select {
+  color-scheme: dark;
+}
+select option {
+  background-color: #1a1a1a;
+  color: #e5e7eb;
+  padding: 6px 8px;
+}
+select option:checked {
+  background-color: #2563eb;
+  color: #fff;
+}
+
+/* ─── Assistant block progressive entrance ──────────────────────────────────
+   Applied via .block-enter on each rendered block.
+   Tailwind utilities can't express @keyframes directly, so we define here.
+────────────────────────────────────────────────────────────────────────────── */
+
+@keyframes blockEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.block-enter {
+  animation: blockEnter 0.22s ease-out both;
+}
+
+/* ─── Right panel slide-in ───────────────────────────────────────────────── */
+
+@keyframes panelSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-panel-slide-in {
+  animation: panelSlideIn 0.2s ease-out both;
+}
+
+/* ─── Fire / Burn Animation ────────────────────────────────────────────── */
+
+@keyframes burnOut {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: brightness(1) blur(0);
+  }
+  30% {
+    opacity: 0.9;
+    transform: scale(1.01) translateY(-2px);
+    filter: brightness(1.3) blur(0);
+  }
+  60% {
+    opacity: 0.4;
+    transform: scale(0.97) translateY(4px);
+    filter: brightness(0.5) blur(1px);
+    color: #f97316;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.92) translateY(16px);
+    filter: brightness(0) blur(3px);
+  }
+}
+
+.threads-burn-out {
+  animation: burnOut 0.7s ease-in forwards;
+  pointer-events: none;
+}
+
+/* ─── Fade in (used for confirm popups) ────────────────────────────────── */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.15s ease-out both;
+}
+
+/* Ensure chat feed rows can span the full available pane width */
+.chat-feed > * {
+  width: 100%;
+  max-width: none;
+}
+
+/* Assistant responses should not inherit composer-like width caps */
+.assistant-message,
+.assistant-message > div {
+  width: 100%;
+  max-width: none;
+}
+
+/* ─── Markdown rendering (library-based) ─────────────────────────────────── */
+
+/* Scoped GitHub markdown adapted for dark assistant messages */
+.markdown-body.ai-markdown {
+  --ai-md-block-gap: 0.95rem;
+  background: transparent;
+  color: #f1f5f9;
+  font-size: 0.855rem;
+  line-height: 1.88;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+  max-width: none !important;
+  width: 100%;
+  margin: 0 !important;
+  padding: 0;
+  border: 0;
+  word-break: break-word;
+}
+
+.markdown-body.ai-markdown > * + * {
+  margin-top: var(--ai-md-block-gap);
+}
+
+.markdown-body.ai-markdown p {
+  margin: 0;
+  color: #eef2f7;
+}
+
+.markdown-body.ai-markdown h1,
+.markdown-body.ai-markdown h2,
+.markdown-body.ai-markdown h3,
+.markdown-body.ai-markdown h4 {
+  font-weight: 600;
+  line-height: 1.32;
+  color: #f5f5f5;
+  margin: 1.25rem 0 0.45rem;
+}
+
+.markdown-body.ai-markdown h1 { font-size: 1.25rem; }
+.markdown-body.ai-markdown h2 { font-size: 1.1rem; border-bottom-color: rgba(115, 115, 115, 0.3); }
+.markdown-body.ai-markdown h3 { font-size: 1rem; }
+.markdown-body.ai-markdown h4 { font-size: 0.94rem; color: #e5e7eb; }
+
+.markdown-body.ai-markdown ul,
+.markdown-body.ai-markdown ol {
+  margin: 0;
+  padding-left: 1.35rem;
+}
+
+.markdown-body.ai-markdown li {
+  margin: 0.26rem 0;
+}
+
+.markdown-body.ai-markdown li::marker {
+  color: #a3a3a3;
+}
+
+.markdown-body.ai-markdown blockquote {
+  color: #d1d5db;
+  border-left: 3px solid rgba(113, 113, 122, 0.45);
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 0 6px 6px 0;
+  padding: 0.45rem 0.9rem;
+}
+
+.markdown-body.ai-markdown strong {
+  color: #fafafa;
+  font-weight: 600;
+}
+
+.markdown-body.ai-markdown em {
+  color: #e5e7eb;
+}
+
+.markdown-body.ai-markdown a {
+  color: #93c5fd;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(147, 197, 253, 0.35);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.markdown-body.ai-markdown a:hover {
+  color: #bfdbfe;
+  border-bottom-color: rgba(191, 219, 254, 0.55);
+}
+
+.markdown-body.ai-markdown hr {
+  border-color: rgba(115, 115, 115, 0.25);
+}
+
+.markdown-body.ai-markdown code:not(pre code),
+.markdown-body.ai-markdown .ai-md-inline-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.84em;
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  padding: 0.14em 0.42em;
+  white-space: nowrap;
+}
+
+.markdown-body.ai-markdown .ai-md-code-shell {
+  border: 1px solid rgba(115, 115, 115, 0.24);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #16181d;
+}
+
+/* Keep code blocks evenly separated from surrounding content. */
+.markdown-body.ai-markdown :is(p, ul, ol, li, blockquote, h1, h2, h3, h4) + .ai-md-code-shell,
+.markdown-body.ai-markdown .ai-md-code-shell + :is(p, ul, ol, blockquote, h1, h2, h3, h4, hr, .ai-md-table-wrap) {
+  margin-top: 1.15rem;
+}
+
+.markdown-body.ai-markdown .ai-md-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(115, 115, 115, 0.22);
+  padding: 0.42rem 0.85rem;
+}
+
+.markdown-body.ai-markdown .ai-md-code-language {
+  color: #d1d5db;
+  font-size: 0.72rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-transform: lowercase;
+  letter-spacing: 0.03em;
+}
+
+.markdown-body.ai-markdown .ai-md-code-copy {
+  font-size: 0.72rem;
+  color: #d1d5db;
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+  padding: 0.16rem 0.45rem;
+  cursor: pointer;
+}
+
+.markdown-body.ai-markdown .ai-md-code-copy:hover {
+  color: #e5e7eb;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.markdown-body.ai-markdown pre {
+  margin: 0;
+  background: transparent;
+  overflow-x: auto;
+  padding: 0.95rem 1rem;
+}
+
+.markdown-body.ai-markdown pre code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.84rem;
+  line-height: 1.62;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+  tab-size: 2;
+}
+
+.markdown-body.ai-markdown .ai-md-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid rgba(115, 115, 115, 0.24);
+  border-radius: 9px;
+}
+
+.markdown-body.ai-markdown .ai-md-table-wrap table {
+  margin: 0;
+  min-width: 600px;
+  display: table;
+  border-collapse: collapse;
+}
+
+.markdown-body.ai-markdown .ai-md-table-wrap thead {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.markdown-body.ai-markdown .ai-md-table-wrap th,
+.markdown-body.ai-markdown .ai-md-table-wrap td {
+  border: 0;
+  border-bottom: 1px solid rgba(115, 115, 115, 0.2);
+  padding: 0.7rem 1rem;
+  white-space: normal;
+  min-width: 120px;
+  vertical-align: top;
+  line-height: 1.55;
+}
+
+.markdown-body.ai-markdown .ai-md-table-wrap th {
+  color: #e5e7eb;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.markdown-body.ai-markdown .ai-md-table-wrap td {
+  color: #f3f4f6;
+  font-size: 0.88rem;
+}
+
+.markdown-body.ai-markdown .ai-md-table-wrap tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ─── Workflow Module Palette ───────────────────────────────────────────── */
+
+.workflow-page {
+  background:
+    radial-gradient(1100px 500px at 82% -10%, rgba(148, 163, 184, 0.06), transparent 58%),
+    radial-gradient(900px 420px at 10% -18%, rgba(82, 82, 91, 0.10), transparent 60%),
+    #111111;
+}
+
+.workflow-shell {
+  max-width: 72rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.workflow-surface {
+  background: rgba(23, 23, 23, 0.82);
+  border: 1px solid rgba(82, 82, 82, 0.48);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(3px);
+}
+
+.workflow-input {
+  background: rgba(38, 38, 38, 0.95);
+  border-color: rgba(82, 82, 82, 0.62);
+  color: #d4d4d8;
+}
+
+.workflow-input::placeholder {
+  color: #737373;
+}
+
+.workflow-muted {
+  color: #a3a3a3;
+}
+
+.workflow-dim {
+  color: #737373;
+}
+
+@media (max-width: 768px) {
+  .markdown-body.ai-markdown {
+    font-size: 0.92rem;
+    line-height: 1.68;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .markdown-body.ai-markdown h1 { font-size: 1.16rem; }
+  .markdown-body.ai-markdown h2 { font-size: 1.04rem; }
+
+  .markdown-body.ai-markdown .ai-md-code-header {
+    padding: 0.38rem 0.75rem;
+  }
+
+  .markdown-body.ai-markdown pre {
+    padding: 0.84rem 0.8rem;
+  }
+}

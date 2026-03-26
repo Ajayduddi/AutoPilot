@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+bun-debug.log*
+
+# Build outputs
+build/
+dist/
+out/
+.output/
+.vinxi/
+
+# TypeScript
+*.tsbuildinfo
+
+# Test and coverage
+coverage/
+.nyc_output/
+
+# Caches
+.cache/
+.eslintcache
+
+# Bundler / task runner caches
+.turbo/
+
+# Misc package artifacts
+*.tgz
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

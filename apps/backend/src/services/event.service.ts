@@ -1,0 +1,13 @@
+import { EventEmitter } from 'events';
+
+class EventBus extends EventEmitter {}
+
+export const eventBus = new EventBus();
+
+export const EventTypes = {
+  NOTIFICATION_CREATED: 'NOTIFICATION_CREATED',
+  WORKFLOW_RUN_UPDATED: 'WORKFLOW_RUN_UPDATED',
+  WORKFLOW_TRIGGERED: 'WORKFLOW_TRIGGERED',
+  WORKFLOW_APPROVAL_REQUESTED: 'WORKFLOW_APPROVAL_REQUESTED',
+  CONTEXT_INDEXED: 'CONTEXT_INDEXED',
+};
