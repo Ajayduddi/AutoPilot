@@ -6,6 +6,7 @@ import type { ActionItem, AssistantBlock, MessageState, TaskCardBlock, WorkflowS
 
 interface AssistantMessageProps {
   content?: string;
+  textScale?: number;
   blocks?: AssistantBlock[];
   state?: MessageState;
   /** Index of the block currently receiving streaming chunks */
@@ -97,6 +98,10 @@ export function AssistantMessage(props: AssistantMessageProps) {
   };
 
   const hasBlocks = () => (props.blocks?.length ?? 0) > 0;
+  const bodyScaleStyle = () => {
+    const scale = Math.min(130, Math.max(85, props.textScale ?? 100));
+    return { "font-size": `calc(0.9375rem * ${scale} / 100)` };
+  };
 
   return (
     <div class="assistant-message group/ai flex w-full max-w-none justify-start mb-1">
@@ -124,7 +129,7 @@ export function AssistantMessage(props: AssistantMessageProps) {
         </div>
 
         {/* Body */}
-        <div class="w-full max-w-none text-[0.9375rem] text-neutral-100 leading-[1.9] break-words min-h-[1.5rem]">
+        <div class="w-full max-w-none text-neutral-100 leading-[1.9] break-words min-h-[1.5rem]" style={bodyScaleStyle()}>
           <Show
             when={effectiveState() !== "thinking"}
             fallback={<ThinkingIndicator />}

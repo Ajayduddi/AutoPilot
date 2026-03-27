@@ -4,7 +4,7 @@ export interface N8nInboundEnvelope {
   user_id: string;
   thread_id: string;
   message_id: string;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
   callback_url: string;
   notification_url: string;
 }
@@ -16,8 +16,8 @@ export interface N8nOutboundEnvelope {
   user_id: string;
   thread_id: string;
   message_id: string;
-  result?: Record<string, any>;
-  error?: Record<string, any>;
-  notification?: Record<string, any>;
-  approval?: Record<string, any>;
+  result?: Record<string, unknown>;
+  error?: Record<string, unknown>;
+  notification?: Record<string, unknown>;
+  approval?: Record<string, unknown>;
 }

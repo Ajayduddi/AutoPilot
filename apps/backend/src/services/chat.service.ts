@@ -25,7 +25,7 @@ export class ChatService {
   }
 
   static async deleteAllThreads(userId: string) {
-    const threads = await ChatRepo.getThreads(userId);
+    const threads = await ChatRepo.getThreads(userId, { limit: 10_000 });
     for (const t of threads) {
       await ContextService.deleteThreadContext(t.id);
     }

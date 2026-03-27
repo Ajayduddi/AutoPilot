@@ -9,3 +9,8 @@ A conversational control center for automations, agents, and workflows using n8n
 4. Run DB migrations: `bun --filter backend run db:push`
 5. Seed database: `bun --filter backend run db:seed`
 6. Run services locally: `bun run dev`
+
+## Quality Commands
+- Typecheck all workspaces: `bun run typecheck`
+- Build all workspaces: `bun run build`
+- Run baseline tests: `bun run test`

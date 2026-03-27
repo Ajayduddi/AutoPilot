@@ -16,7 +16,7 @@ const router = Router();
 router.get('/', async (req, res, next) => {
   try {
     const { provider, visibility, enabled, archived, search } = req.query;
-    const userId = 'usr_admin'; // Mocked until auth
+    const userId = req.auth!.user.id;
 
     const workflows = await WorkflowService.listAccessible(userId, {
       provider: provider as string | undefined,
@@ -41,7 +41,7 @@ router.get('/', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────
 router.get('/:id', async (req, res, next) => {
   try {
-    const userId = 'usr_admin';
+    const userId = req.auth!.user.id;
     const workflow = await WorkflowService.getById(req.params.id, userId);
     if (!workflow) {
       return res.status(404).json({
@@ -61,7 +61,7 @@ router.get('/:id', async (req, res, next) => {
 router.post('/', validate(createWorkflowSchema), async (req, res, next) => {
   try {
     const data = req.body;
-    const userId = 'usr_admin';
+    const userId = req.auth!.user.id;
 
     const workflow = await WorkflowService.create({
       key: data.key,
@@ -69,7 +69,7 @@ router.post('/', validate(createWorkflowSchema), async (req, res, next) => {
       description: data.description,
       provider: data.provider,
       visibility: data.visibility,
-      ownerUserId: data.ownerUserId || userId,
+      ownerUserId: userId,
       enabled: data.enabled,
       requiresApproval: data.requiresApproval,
       triggerMethod: data.triggerMethod,
@@ -105,11 +105,12 @@ router.post('/', validate(createWorkflowSchema), async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────
 router.patch('/:id', validate(updateWorkflowSchema), async (req, res, next) => {
   try {
-    const workflow = await WorkflowService.update(req.params.id as string, req.body);
+    const userId = req.auth!.user.id;
+    const workflow = await WorkflowService.updateForUser(req.params.id as string, userId, req.body);
     if (!workflow) {
       return res.status(404).json({
         status: 'error',
-        error: { code: 'NOT_FOUND', message: 'Workflow not found' },
+        error: { code: 'NOT_FOUND', message: 'Workflow not found or not accessible' },
       });
     }
     res.json({
@@ -127,13 +128,14 @@ router.patch('/:id', validate(updateWorkflowSchema), async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────
 router.delete('/:id', async (req, res, next) => {
   try {
+    const userId = req.auth!.user.id;
     const mode = req.query.mode === 'hard' ? 'hard' : 'archive';
     let workflow;
 
     if (mode === 'hard') {
-      workflow = await WorkflowService.delete(req.params.id);
+      workflow = await WorkflowService.deleteForUser(req.params.id, userId);
     } else {
-      workflow = await WorkflowService.archive(req.params.id);
+      workflow = await WorkflowService.archiveForUser(req.params.id, userId);
     }
 
     if (!workflow) {
@@ -160,7 +162,7 @@ router.post('/:id/trigger', validate(triggerWorkflowSchema), async (req, res, ne
   try {
     const id = req.params.id as string;
     const { source, input } = req.body;
-    const userId = 'usr_admin';
+    const userId = req.auth!.user.id;
 
     const workflow = await WorkflowService.getById(id, userId);
     if (!workflow) {
@@ -222,7 +224,7 @@ router.post('/:id/trigger', validate(triggerWorkflowSchema), async (req, res, ne
 // ─────────────────────────────────────────────────────────────
 router.get('/:id/runs', async (req, res, next) => {
   try {
-    const userId = 'usr_admin';
+    const userId = req.auth!.user.id;
     const workflow = await WorkflowService.getById(req.params.id, userId);
     if (!workflow) {
       return res.status(404).json({
@@ -231,8 +233,10 @@ router.get('/:id/runs', async (req, res, next) => {
       });
     }
 
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
-    const runs = await WorkflowService.getRunsByWorkflowId(req.params.id, limit);
+    const limit = req.query.limit ? Math.max(1, Math.min(200, parseInt(req.query.limit as string, 10))) : 50;
+    const before = typeof req.query.before === 'string' ? req.query.before : undefined;
+    const runs = await WorkflowService.getRunsByWorkflowId(req.params.id, limit, before);
+    const nextCursor = runs.length >= limit ? runs[runs.length - 1]?.createdAt : null;
 
     res.json({
       status: 'ok',
@@ -241,6 +245,7 @@ router.get('/:id/runs', async (req, res, next) => {
         workflowId: req.params.id,
         total: runs.length,
         limit,
+        nextCursor,
       },
     });
   } catch (err) {
@@ -253,7 +258,14 @@ router.get('/:id/runs', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────
 router.post('/:id/validate', async (req, res, next) => {
   try {
-    const result = await WorkflowService.validateWorkflowConfig(req.params.id);
+    const userId = req.auth!.user.id;
+    const result = await WorkflowService.validateWorkflowConfigForUser(req.params.id, userId);
+    if (!result) {
+      return res.status(404).json({
+        status: 'error',
+        error: { code: 'NOT_FOUND', message: 'Workflow not found or not accessible' },
+      });
+    }
     res.json({
       status: 'ok',
       data: result,

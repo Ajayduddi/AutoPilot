@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vinxi dev --port 5173",
     "build": "vinxi build",
-    "start": "vinxi start"
+    "start": "vinxi start",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test"
   },
   "dependencies": {
     "@chat-automation/shared": "workspace:*",

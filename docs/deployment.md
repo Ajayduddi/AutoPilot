@@ -25,10 +25,25 @@ DATABASE_URL=postgresql://user:password@localhost:5432/autopilot
 # ─── Backend ────────────────────────────────
 PORT=3000
 NODE_ENV=development
+FRONTEND_ORIGIN=http://localhost:5173
 
-# ─── n8n Integration ────────────────────────
+# ─── Authentication / Sessions ──────────────
+AUTH_COOKIE_SECRET=change-this-secret
+SESSION_TTL_DAYS=14
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
+
+# ─── Provider Callback Security ─────────────
+# Optional fallback secret. Preferred approach:
+# generate callback keys in Settings > Webhook Callbacks.
+WEBHOOK_CALLBACK_SECRET=your_strong_secret_here
+
+# Public base URL for callback links emitted to providers
+CALLBACK_BASE_URL=http://localhost:3000
+
+# Optional: used only by seed script for sample n8n workflows
 N8N_WEBHOOK_URL=http://localhost:5678/webhook
-N8N_CALLBACK_SECRET=your_strong_secret_here
 
 # ─── LLM Provider (Ollama default) ──────────
 OLLAMA_URL=http://localhost:11434
@@ -44,9 +59,12 @@ OLLAMA_URL=http://localhost:11434
 ## 2. Database Setup
 
 ```bash
-# Run migrations
+# Generate migrations from schema (when schema changes)
 cd apps/backend
-bun run db:migrate
+bun run db:generate
+
+# Apply schema to DB
+bun run db:push
 
 # Seed development data (admin user + sample workflows)
 bun run db:seed
@@ -69,18 +87,26 @@ Verify the backend is healthy:
 curl http://localhost:3000/health
 ```
 
+First run uses onboarding:
+- open `http://localhost:5173/onboarding`
+- create the owner account
+- sign-up is locked after first account (single-user mode)
+
 ---
 
-## 4. n8n Wiring
+## 4. Provider Webhook Wiring
 
-### Triggering workflows
+Execution endpoints are configured per workflow when you create/edit workflows.
+Use the callback endpoints below for providers to send run status/results back to this platform.
+
+### Triggering workflows (per workflow endpoint)
 Configure each n8n workflow with a **Webhook** trigger node:
 - Method: `POST`
 - Path: e.g. `/create-task`
 - The orchestrator will send:
 ```json
 {
-  "_meta": { "runId": "...", "workflowKey": "...", "userId": "usr_admin" },
+  "_meta": { "runId": "...", "workflowKey": "...", "userId": "<current_user_id>" },
   "text": "user-provided content"
 }
 ```
@@ -89,7 +115,8 @@ Configure each n8n workflow with a **Webhook** trigger node:
 At the end of each n8n workflow, add an **HTTP Request** node:
 - URL: `http://your-backend:3000/api/webhooks/n8n`
 - Method: `POST`
-- Header: `x-n8n-secret: <your N8N_CALLBACK_SECRET>`
+- Header: `x-webhook-secret: <generated_callback_key>`
+- Alternative header (backward-compatible): `x-n8n-secret`
 - Body:
 ```json
 {
@@ -97,6 +124,39 @@ At the end of each n8n workflow, add an **HTTP Request** node:
   "runId": "{{ $json._meta.runId }}",
   "result": { ... }
 }
+```
+
+### Unified callback (non-n8n or custom adapters)
+- URL: `http://your-backend:3000/api/webhooks/callback`
+- Method: `POST`
+- Header: `x-webhook-secret: <generated_callback_key>`
+- Body shape: `traceId`, `workflowKey`, `provider`, `status`, `result/raw/error`
+
+Example:
+```bash
+curl -X POST "http://localhost:3000/api/webhooks/callback" \
+  -H "Content-Type: application/json" \
+  -H "x-webhook-secret: whsec_your_generated_key_here" \
+  -d '{
+    "traceId": "trace_123",
+    "workflowKey": "wf_portfolio",
+    "provider": "n8n",
+    "status": "completed",
+    "result": { "message": "done" },
+    "raw": { "providerRunId": "abc123" }
+  }'
+```
+
+Legacy n8n callback example:
+```bash
+curl -X POST "http://localhost:3000/api/webhooks/n8n" \
+  -H "Content-Type: application/json" \
+  -H "x-webhook-secret: whsec_your_generated_key_here" \
+  -d '{
+    "type": "completed",
+    "runId": "run_123",
+    "result": { "message": "done" }
+  }'
 ```
 
 ### Requesting human approval (optional)
@@ -107,7 +167,7 @@ To pause a workflow for user approval, add an **HTTP Request** node before the s
 ```json
 {
   "runId": "{{ $json._meta.runId }}",
-  "userId": "usr_admin",
+  "userId": "<current_user_id>",
   "summary": "Please confirm: delete 3 archived emails",
   "details": {}
 }
@@ -121,8 +181,18 @@ Then add a **Wait** node. When the user approves via the UI, n8n resumes from th
 1. Create the workflow in n8n and copy its webhook URL
 2. Run the seed script or insert directly:
 ```sql
-INSERT INTO workflows (key, display_name, description, n8n_webhook_url, enabled)
-VALUES ('wf_my_flow', 'My New Flow', 'What it does', 'http://n8n/webhook/my-flow', true);
+INSERT INTO workflows (id, key, name, description, provider, visibility, trigger_method, execution_endpoint, enabled)
+VALUES (
+  'wf_my_flow_id',
+  'wf_my_flow',
+  'My New Flow',
+  'What it does',
+  'n8n',
+  'public',
+  'webhook',
+  'http://n8n/webhook/my-flow',
+  true
+);
 ```
 3. The orchestrator's LLM parser will now propose this workflow when user intent matches
 
@@ -144,7 +214,8 @@ The `LLMFactory` auto-reads this on each request — no restart needed.
 ## 7. Production Checklist
 
 - [ ] Set `NODE_ENV=production`
-- [ ] Use a strong, unique `N8N_CALLBACK_SECRET`
+- [ ] Generate callback keys in Settings and store them in your provider securely
+- [ ] (Optional fallback) set a strong `WEBHOOK_CALLBACK_SECRET`
 - [ ] Serve behind a reverse proxy (nginx/caddy) with HTTPS
 - [ ] Point `DATABASE_URL` to a managed Postgres instance
 - [ ] Generate real PWA icons (192x192 and 512x512 PNGs) in `public/icons/`

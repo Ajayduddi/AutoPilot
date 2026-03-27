@@ -4,6 +4,7 @@ import { eventBus, EventTypes } from './event.service';
 import { NotificationService } from './notification.service';
 import { ContextService } from './context.service';
 import { WorkflowProviderFactory } from '../providers/workflow/factory';
+import { UserRepo } from '../repositories/user.repo';
 import type {
   WorkflowRunStatus,
   WorkflowTriggerSource,
@@ -72,6 +73,12 @@ export class WorkflowService {
     return sanitizeWorkflow(workflow);
   }
 
+  static async updateForUser(id: string, userId: string, data: UpdateWorkflowInput) {
+    const existing = await this.getById(id, userId);
+    if (!existing) return null;
+    return this.update(id, data);
+  }
+
   static async archive(id: string) {
     const existing = await WorkflowRepo.getWorkflowById(id);
     if (!existing) return null;
@@ -79,10 +86,22 @@ export class WorkflowService {
     return sanitizeWorkflow(workflow);
   }
 
+  static async archiveForUser(id: string, userId: string) {
+    const existing = await this.getById(id, userId);
+    if (!existing) return null;
+    return this.archive(id);
+  }
+
   static async delete(id: string) {
     const existing = await WorkflowRepo.getWorkflowById(id);
     if (!existing) return null;
     return WorkflowRepo.deleteWorkflow(id);
+  }
+
+  static async deleteForUser(id: string, userId: string) {
+    const existing = await this.getById(id, userId);
+    if (!existing) return null;
+    return this.delete(id);
   }
 
   // ── Queries (API-facing — sanitized, visibility enforced) ───
@@ -253,13 +272,6 @@ export class WorkflowService {
       await WorkflowRepo.updateRunStatus(runId, 'running');
       eventBus.emit(EventTypes.WORKFLOW_RUN_UPDATED, { id: runId, status: 'running' });
       eventBus.emit(EventTypes.WORKFLOW_TRIGGERED, { runId, workflowId, workflowKey, provider });
-      
-      NotificationService.notify(userId, {
-        type: 'workflow_event',
-        title: `Workflow Started: ${workflowKey}`,
-        message: `Run ${runId.slice(0, 8)} triggered via ${triggerSource}`,
-        runId,
-      }).catch(err => console.error('[NotificationService] failed:', err));
 
       // Resolve adapter
       const adapter = WorkflowProviderFactory.getAdapter(provider);
@@ -287,12 +299,14 @@ export class WorkflowService {
       // Update run with result
       if (result.status === 'failed') {
         await this.updateRunStatus(runId, 'failed', null, result.raw, result.error as any);
-        NotificationService.notify(userId, {
-          type: 'workflow_event',
-          title: `Workflow Failed: ${workflowKey}`,
-          message: `Run ${runId.slice(0, 8)} failed during execution.`,
-          runId,
-        }).catch(() => {});
+        if (NotificationService.shouldNotifyWorkflowRun({ triggerSource, threadId })) {
+          NotificationService.notify(userId, {
+            type: 'workflow_event',
+            title: `Workflow Failed: ${workflowKey}`,
+            message: `Run ${runId.slice(0, 8)} failed during execution.`,
+            runId,
+          }).catch(() => {});
+        }
 
         // Index failure into context memory
         ContextService.indexWorkflowRun({
@@ -310,12 +324,14 @@ export class WorkflowService {
         }).catch(err => console.error('[WorkflowService] Context indexing failed:', err));
       } else {
         await this.updateRunStatus(runId, result.status, result.result, result.raw);
-        NotificationService.notify(userId, {
-          type: 'workflow_event',
-          title: `Workflow Completed: ${workflowKey}`,
-          message: `Run ${runId.slice(0, 8)} finished successfully.`,
-          runId,
-        }).catch(() => {});
+        if (NotificationService.shouldNotifyWorkflowRun({ triggerSource, threadId })) {
+          NotificationService.notify(userId, {
+            type: 'workflow_event',
+            title: `Workflow Completed: ${workflowKey}`,
+            message: `Run ${runId.slice(0, 8)} finished successfully.`,
+            runId,
+          }).catch(() => {});
+        }
 
         // Index success into context memory
         ContextService.indexWorkflowRun({
@@ -342,13 +358,15 @@ export class WorkflowService {
       const errorPayload = { error: err instanceof Error ? err.message : String(err) };
       await this.updateRunStatus(runId, 'failed', undefined, undefined, errorPayload).catch(() => {});
       WorkflowRepo.updateLastRun(workflowId, 'failed').catch(() => {});
-      
-      NotificationService.notify(userId, {
-        type: 'workflow_event',
-        title: `Workflow Dispatch Failed: ${workflowKey}`,
-        message: `Run ${runId.slice(0, 8)} completely failed: ${errorPayload.error}`,
-        runId,
-      }).catch(() => {});
+
+      if (NotificationService.shouldNotifyWorkflowRun({ triggerSource, threadId })) {
+        NotificationService.notify(userId, {
+          type: 'workflow_event',
+          title: `Workflow Dispatch Failed: ${workflowKey}`,
+          message: `Run ${runId.slice(0, 8)} completely failed: ${errorPayload.error}`,
+          runId,
+        }).catch(() => {});
+      }
 
       // Index dispatch failure into context memory
       ContextService.indexWorkflowRun({
@@ -393,8 +411,14 @@ export class WorkflowService {
     return adapter.validateConfig(workflow);
   }
 
-  static async getRunsByWorkflowId(workflowId: string, limit = 50) {
-    return WorkflowRepo.getRunsByWorkflowId(workflowId, limit);
+  static async validateWorkflowConfigForUser(workflowId: string, userId: string) {
+    const existing = await this.getById(workflowId, userId);
+    if (!existing) return null;
+    return this.validateWorkflowConfig(workflowId);
+  }
+
+  static async getRunsByWorkflowId(workflowId: string, limit = 50, before?: string) {
+    return WorkflowRepo.getRunsByWorkflowId(workflowId, limit, before);
   }
 
   static async getRunById(runId: string) {
@@ -403,5 +427,40 @@ export class WorkflowService {
 
   static async getRunByTraceId(traceId: string) {
     return WorkflowRepo.getRunByTraceId(traceId);
+  }
+
+  /**
+   * Create a run record for externally-originated callbacks that did not come
+   * through this application's trigger path (no app traceId available).
+   */
+  static async createExternalCallbackRun(params: {
+    workflowKey: string;
+    provider: string;
+    userId?: string;
+    traceId?: string;
+    triggerSource?: WorkflowTriggerSource;
+  }) {
+    const workflow = await WorkflowRepo.getWorkflowByKey(params.workflowKey);
+    if (!workflow) return null;
+    const resolvedUserId =
+      params.userId
+      || workflow.ownerUserId
+      || (await UserRepo.getAnyPrimaryUser())?.id;
+    if (!resolvedUserId) return null;
+
+    const run = await WorkflowRepo.createRun({
+      id: randomUUID(),
+      workflowId: workflow.id,
+      workflowKey: workflow.key,
+      provider: (params.provider as WorkflowProvider) || (workflow.provider as WorkflowProvider),
+      traceId: params.traceId?.trim() || randomUUID(),
+      userId: resolvedUserId,
+      triggerSource: params.triggerSource ?? 'system',
+      inputPayload: {},
+      status: 'running',
+    });
+
+    eventBus.emit(EventTypes.WORKFLOW_RUN_UPDATED, run);
+    return run;
   }
 }

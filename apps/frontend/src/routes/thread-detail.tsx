@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "@solidjs/router";
 import { createEffect } from "solid-js";
-import ChatPage from "./index";
+import { ChatPage } from "./index";
 
 export default function ThreadDetail() {
   const params = useParams();

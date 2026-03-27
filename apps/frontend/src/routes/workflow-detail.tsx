@@ -42,7 +42,10 @@ export default function WorkflowDetail() {
   const params = useParams();
   const navigate = useNavigate();
   const [workflow, { refetch: refetchWorkflow }] = createResource(() => params.id, (id) => workflowsApi.getById(id));
-  const [runs, { refetch: refetchRuns }] = createResource(() => params.id, (id) => workflowsApi.getRuns(id, 20));
+  const [runs, { refetch: refetchRuns }] = createResource(
+    () => params.id,
+    (id) => workflowsApi.getRuns(id, { limit: 20 }),
+  );
 
   const [triggering, setTriggering] = createSignal(false);
   const [triggerResult, setTriggerResult] = createSignal<any>(null);
@@ -301,7 +304,7 @@ export default function WorkflowDetail() {
                 <div class="flex items-start justify-between gap-4">
                   <div>
                     <div class="flex items-center gap-2.5">
-                      <h1 class="text-lg font-semibold text-neutral-100">{(wf() as any).name}</h1>
+                      <h1 class="page-title">{(wf() as any).name}</h1>
                       <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800/70 border border-slate-600/35 text-slate-100">
                         {providerLabels[(wf() as any).provider] || (wf() as any).provider}
                       </span>

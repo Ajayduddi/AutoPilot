@@ -7,6 +7,7 @@ import type { ActionItem, AssistantBlock, MessageState, TaskCardBlock, WorkflowS
 interface MessageBubbleProps {
   role: "user" | "assistant" | "system";
   content?: string;
+  textScale?: number;
   blocks?: AssistantBlock[];
   state?: MessageState;
   streamingBlockIdx?: number;
@@ -33,7 +34,7 @@ function getRunId(content?: string) {
 
 export function MessageBubble(props: MessageBubbleProps) {
   if (props.role === "user") {
-    return <UserMessage content={props.content} onEdit={props.onEdit} />;
+    return <UserMessage content={props.content} onEdit={props.onEdit} textScale={props.textScale} />;
   }
 
   if (props.role === "system") {
@@ -62,6 +63,7 @@ export function MessageBubble(props: MessageBubbleProps) {
   return (
     <AssistantMessage
       content={props.content}
+      textScale={props.textScale}
       blocks={props.blocks}
       state={props.state}
       streamingBlockIdx={props.streamingBlockIdx}

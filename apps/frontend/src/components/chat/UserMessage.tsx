@@ -3,6 +3,7 @@ import { Show, createSignal } from "solid-js";
 interface UserMessageProps {
   content?: string;
   onEdit?: (newText: string) => void;
+  textScale?: number;
 }
 
 function IconEdit() {
@@ -35,6 +36,10 @@ export function UserMessage(props: UserMessageProps) {
   const [editing, setEditing] = createSignal(false);
   const [editValue, setEditValue] = createSignal(props.content ?? "");
   const [copied, setCopied] = createSignal(false);
+  const bubbleScaleStyle = () => {
+    const scale = Math.min(130, Math.max(85, props.textScale ?? 100));
+    return { "font-size": `calc(0.844rem * ${scale} / 100)` };
+  };
 
   function copyText() {
     const text = props.content?.trim();
@@ -120,7 +125,7 @@ export function UserMessage(props: UserMessageProps) {
               </Show>
             </div>
 
-            <div class="bg-[#1e1e1e] rounded-3xl px-5 py-3 text-[0.844rem] text-neutral-200 leading-[1.65] whitespace-pre-wrap break-words">
+            <div class="bg-[#1e1e1e] rounded-3xl px-5 py-3 text-neutral-200 leading-[1.65] whitespace-pre-wrap break-words" style={bubbleScaleStyle()}>
               {props.content}
             </div>
           </div>

@@ -3,5 +3,6 @@
   "compilerOptions": {
     "types": ["vinxi/types/client"]
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }

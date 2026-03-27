@@ -178,7 +178,7 @@ export function BlockRenderer(props: BlockRendererProps) {
                   <Show when={block.title}>
                     <SectionHeader title={block.title!} divider />
                   </Show>
-                  <div class="text-[0.9375rem] text-neutral-100 leading-[1.9] break-words">
+                  <div class="text-[1em] text-neutral-100 leading-[1.9] break-words">
                     <MarkdownContent content={block.text} />
                     <Show when={streaming()}><StreamingCursor /></Show>
                   </div>
@@ -191,7 +191,7 @@ export function BlockRenderer(props: BlockRendererProps) {
                   <Show when={block.title}>
                     <SectionHeader title={block.title!} divider />
                   </Show>
-                  <p class="text-[0.9375rem] text-neutral-100 leading-[1.9] break-words whitespace-pre-wrap">
+                  <p class="text-[1em] text-neutral-100 leading-[1.9] break-words whitespace-pre-wrap">
                     {block.text}
                     <Show when={streaming()}><StreamingCursor /></Show>
                   </p>

@@ -5,6 +5,8 @@ export const users = pgTable('users', {
   id: text('id').primaryKey(),
   email: text('email').unique().notNull(),
   name: text('name'),
+  passwordHash: text('password_hash'),
+  googleSub: text('google_sub').unique(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -118,6 +120,19 @@ export const notifications = pgTable('notifications', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+export const pushSubscriptions = pgTable('push_subscriptions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').references(() => users.id).notNull(),
+  endpoint: text('endpoint').notNull().unique(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  userAgent: text('user_agent'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  lastUsedAt: timestamp('last_used_at'),
+  revokedAt: timestamp('revoked_at'),
+});
+
 // --- Configs & Connections ---
 export const providerConfigs = pgTable('provider_configs', {
   id: text('id').primaryKey(),
@@ -129,6 +144,17 @@ export const providerConfigs = pgTable('provider_configs', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+export const webhookSecrets = pgTable('webhook_secrets', {
+  id: text('id').primaryKey(),
+  label: text('label').notNull(),
+  secretPrefix: text('secret_prefix').notNull(),
+  secretHash: text('secret_hash').notNull().unique(),
+  createdByUserId: text('created_by_user_id').references(() => users.id),
+  lastUsedAt: timestamp('last_used_at'),
+  revokedAt: timestamp('revoked_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 export const userConnections = pgTable('user_connections', {
   id: text('id').primaryKey(),
   userId: text('user_id').references(() => users.id).notNull(),
@@ -137,6 +163,21 @@ export const userConnections = pgTable('user_connections', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+export const authSessions = pgTable('auth_sessions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').references(() => users.id).notNull(),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  lastSeenAt: timestamp('last_seen_at'),
+  revokedAt: timestamp('revoked_at'),
+  userAgent: text('user_agent'),
+  ip: text('ip'),
+}, (table) => [
+  index('idx_auth_sessions_user').on(table.userId),
+  index('idx_auth_sessions_expires').on(table.expiresAt),
+]);
 
 // --- Context Memory (context-mode integration) ---
 export const contextMemory = pgTable('context_memory', {

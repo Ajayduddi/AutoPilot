@@ -12,6 +12,8 @@ interface Props {
   onChange: (value: string) => void;
   placeholder?: string;
   class?: string;
+  triggerClass?: string;
+  menuClass?: string;
 }
 
 export function CustomSelect(props: Props) {
@@ -35,7 +37,10 @@ export function CustomSelect(props: Props) {
       <button
         type="button"
         onClick={() => setOpen(!open())}
-        class="workflow-input w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm text-neutral-300 hover:border-neutral-600/80 focus:outline-none focus:border-neutral-500/90 focus:ring-1 focus:ring-neutral-500/25 transition-colors cursor-pointer"
+        class={
+          "workflow-input w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm text-neutral-300 hover:border-neutral-600/80 focus:outline-none focus:border-neutral-500/90 focus:ring-1 focus:ring-neutral-500/25 transition-colors cursor-pointer " +
+          (props.triggerClass || "")
+        }
       >
         <Show when={selected()?.icon}>
           <span class="shrink-0 w-4 h-4 flex items-center justify-center text-neutral-400">
@@ -50,7 +55,12 @@ export function CustomSelect(props: Props) {
 
       {/* Dropdown */}
       <Show when={open()}>
-        <div class="absolute z-50 mt-1 w-full min-w-[160px] rounded-lg bg-neutral-900 border border-neutral-700/70 shadow-xl shadow-black/40 py-1 block-enter overflow-hidden">
+        <div
+          class={
+            "absolute z-50 mt-1 w-full min-w-[160px] rounded-lg bg-neutral-900 border border-neutral-700/70 shadow-xl shadow-black/40 py-1 block-enter overflow-hidden " +
+            (props.menuClass || "")
+          }
+        >
           <For each={props.options}>
             {(opt) => (
               <button

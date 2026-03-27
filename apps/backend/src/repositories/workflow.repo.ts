@@ -1,4 +1,4 @@
-import { eq, and, desc, ilike, inArray, SQL } from 'drizzle-orm';
+import { eq, and, desc, ilike, inArray, SQL, lt } from 'drizzle-orm';
 import { db } from '../db';
 import { workflows, workflowRuns } from '../db/schema';
 import type {
@@ -219,9 +219,12 @@ export const WorkflowRepo = {
     });
   },
 
-  async getRunsByWorkflowId(workflowId: string, limit = 50) {
+  async getRunsByWorkflowId(workflowId: string, limit = 50, before?: string) {
+    const where = before
+      ? and(eq(workflowRuns.workflowId, workflowId), lt(workflowRuns.createdAt, new Date(before)))
+      : eq(workflowRuns.workflowId, workflowId);
     return await db.query.workflowRuns.findMany({
-      where: eq(workflowRuns.workflowId, workflowId),
+      where,
       orderBy: desc(workflowRuns.createdAt),
       limit,
     });

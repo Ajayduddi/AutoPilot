@@ -199,8 +199,8 @@ export class OrchestratorService {
       // Take the most recent N messages (excluding the current one which hasn't been saved yet)
       const recent = allMessages.slice(-maxMessages);
       return recent
-        .filter(m => m.role === 'user' || m.role === 'assistant')
-        .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+        .filter(m => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim().length > 0)
+        .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content as string }));
     } catch (err) {
       console.error('[Orchestrator] Failed to fetch conversation history:', err);
       return [];
@@ -208,7 +208,14 @@ export class OrchestratorService {
   }
 
   /** Legacy synchronous handler — kept for non-streaming POST route. */
-  static async handleIncomingMessage(threadId: string, content: string, traceId: string, providerId?: string, model?: string) {
+  static async handleIncomingMessage(
+    threadId: string,
+    content: string,
+    traceId: string,
+    userId: string,
+    providerId?: string,
+    model?: string,
+  ) {
     // ── Context retrieval for legacy handler ──
     const retrievalLimit = getContextMaxRetrievalForModel(model);
     const history = await OrchestratorService.buildConversationHistory(threadId, model);
@@ -236,7 +243,7 @@ export class OrchestratorService {
         const { workflow } = validation;
         const run = await WorkflowService.executeAndAwait(
           workflow.id, workflow.key, workflow.provider, workflow.executionEndpoint,
-          'usr_admin', traceId, 'chat', intent.parameters, threadId,
+          userId, traceId, 'chat', intent.parameters, threadId,
         );
         const resultItems = formatRunResult(run);
         const summaryText = run.status === 'completed'
@@ -274,8 +281,6 @@ export class OrchestratorService {
       }
 
       const { workflow } = validation;
-      const userId = 'usr_admin';
-
       // ── Context-aware decisioning: check cache before executing ──
       const cacheResult = await ContextService.evaluateCacheHit(threadId, workflow.key, intent.parameters);
 
@@ -321,6 +326,7 @@ export class OrchestratorService {
     threadId: string,
     content: string,
     traceId: string,
+    userId: string,
     providerId: string | undefined,
     model: string | undefined,
     callbacks: StreamCallbacks,
@@ -506,7 +512,7 @@ export class OrchestratorService {
         // 3. Execute and AWAIT result
         const run = await WorkflowService.executeAndAwait(
           workflow.id, workflow.key, workflow.provider, workflow.executionEndpoint,
-          'usr_admin', traceId, 'chat', intent.parameters, threadId,
+          userId, traceId, 'chat', intent.parameters, threadId,
         );
 
         // Enrich context memory with original user question

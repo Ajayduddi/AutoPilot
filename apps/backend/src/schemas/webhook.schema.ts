@@ -13,7 +13,7 @@ export const n8nCallbackSchema = z.object({
 /** Unified provider callback schema */
 export const unifiedCallbackSchema = z.object({
   body: z.object({
-    traceId: z.string(),
+    traceId: z.string().optional(),
     workflowKey: z.string(),
     provider: z.enum(['n8n', 'zapier', 'make', 'sim', 'custom']),
     status: z.enum(['running', 'completed', 'failed', 'waiting_approval']),

@@ -1,18 +1,28 @@
 import { Title } from "@solidjs/meta";
-import { createResource, createSignal, createEffect, For, Show, onCleanup } from "solid-js";
+import { createResource, createSignal, createEffect, createMemo, For, Show, onCleanup } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { MessageBubble } from "../components/chat/MessageBubble";
 import { DetailPanel } from "../components/chat/DetailPanel";
 import { usePanel } from "../context/panel.context";
 import { chatApi, settingsApi, workflowsApi } from "../lib/api";
-import { useNavigate, useParams } from "@solidjs/router";
+import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import type { ActionItem, AssistantBlock, MessageState, TaskCardBlock, WorkflowStatus, WorkflowStatusBlock } from "../components/chat/types";
+import {
+  coerceWorkflowStatus,
+  fallbackAssistantBlocks,
+  humanizeStatus,
+  humanizeWorkflowKey,
+  normalizeProviderName,
+  prettyProviderName,
+} from "./chat.helpers";
 
 type ChatPageProps = { threadId?: string };
-function ChatPage(props: ChatPageProps = {}) {
+export function ChatPage(props: ChatPageProps = {}) {
   const { openPanel } = usePanel();
   const [threads, { refetch: refetchThreads }] = createResource(() => chatApi.getThreads());
   const [providers] = createResource(() => settingsApi.getProviders());
+  const [allWorkflows] = createResource(() => workflowsApi.getAll({ archived: "false" }));
+
 
   // Aggregate all models from all endpoints
   const [aggregatedModels] = createResource(providers, async (provs) => {
@@ -39,7 +49,7 @@ function ChatPage(props: ChatPageProps = {}) {
           });
           return models.map((m: string) => ({
             providerId: p.id,
-            providerName: p.provider,
+            providerName: normalizeProviderName(p.provider),
             modelName: m
           }));
         } catch (e) {
@@ -54,6 +64,9 @@ function ChatPage(props: ChatPageProps = {}) {
   const [activeThreadId, setActiveThreadId] = createSignal<string | null>(props.threadId ?? null);
   const navigate = useNavigate();
   const params = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [lastDraftKey, setLastDraftKey] = createSignal<string | null>(null);
+  const [lastAutoSendKey, setLastAutoSendKey] = createSignal<string | null>(null);
   const [messages, setMessages] = createSignal<any[]>([]);
   const [input, setInput] = createSignal("");
   const [sending, setSending] = createSignal(false);
@@ -75,9 +88,15 @@ function ChatPage(props: ChatPageProps = {}) {
   const [menuOpenId, setMenuOpenId] = createSignal<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = createSignal(true);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = createSignal(false);
+  const [modelProviderTab, setModelProviderTab] = createSignal<string>("all");
+  const [showModelSearch, setShowModelSearch] = createSignal(false);
+  const [modelSearchQuery, setModelSearchQuery] = createSignal("");
   const [isBurning, setIsBurning] = createSignal(false);
   const [showScrollToBottom, setShowScrollToBottom] = createSignal(false);
   const [confirmModal, setConfirmModal] = createSignal<{ type: "delete" | "clear-all"; threadId?: string } | null>(null);
+  const [isCustomizePanelOpen, setIsCustomizePanelOpen] = createSignal(false);
+  const [chatFontScale, setChatFontScale] = createSignal<number>(100);
+  const [highlightedSlashIdx, setHighlightedSlashIdx] = createSignal(0);
   const composerHints = ["Add task...", "Run workflow...", "Check emails..."];
   const [placeholderHintIndex, setPlaceholderHintIndex] = createSignal(0);
 
@@ -88,6 +107,21 @@ function ChatPage(props: ChatPageProps = {}) {
       setPlaceholderHintIndex((prev) => (prev + 1) % composerHints.length);
     }, 2600);
     onCleanup(() => clearInterval(timer));
+  });
+
+  createEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem("chat_font_scale");
+    const parsed = saved ? Number(saved) : NaN;
+    if (Number.isFinite(parsed)) {
+      const safe = Math.min(130, Math.max(85, Math.round(parsed)));
+      setChatFontScale(safe);
+    }
+  });
+
+  createEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("chat_font_scale", String(chatFontScale()));
   });
 
   // Scroll feed whenever a new block arrives during streaming
@@ -106,33 +140,6 @@ function ChatPage(props: ChatPageProps = {}) {
     setTimeout(() => updateScrollToBottomVisibility(), 0);
   });
 
-  const humanizeStatus = (status: string) => {
-    if (status === "waiting_approval") return "waiting for approval";
-    return status.replace(/_/g, " ");
-  };
-
-  const humanizeWorkflowKey = (key?: string) => {
-    if (!key) return "Workflow";
-    return key
-      .replace(/[_-]/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
-  };
-
-  const coerceWorkflowStatus = (status?: string): WorkflowStatus => {
-    if (status === "completed" || status === "failed" || status === "waiting_approval") return status;
-    return "running";
-  };
-
-  const fallbackAssistantBlocks = (content?: string | null): AssistantBlock[] => {
-    const text = (content || "").trim();
-    if (!text) return [];
-
-    const firstSentence = text.split(/(?<=[.!?])\s/).find(Boolean) || text;
-    return [
-      { type: "summary", items: [firstSentence] },
-      { type: "markdown", title: "Results", text },
-    ];
-  };
 
   const getAssistantBlocks = (msg: any): AssistantBlock[] => {
     const raw = msg?.blocks;
@@ -451,7 +458,12 @@ function ChatPage(props: ChatPageProps = {}) {
     const models = aggregatedModels();
     if (models && models.length > 0 && !selectedModelStr()) {
       const defaultProv = providers()?.find((p: any) => p.isDefault);
-      const defaultModel = models.find(m => m.providerId === defaultProv?.id);
+      const configuredModel = (defaultProv?.model || "").trim();
+      const exactConfiguredModel =
+        configuredModel && configuredModel !== "dynamic"
+          ? models.find((m) => m.providerId === defaultProv?.id && m.modelName === configuredModel)
+          : null;
+      const defaultModel = exactConfiguredModel || models.find(m => m.providerId === defaultProv?.id);
       if (defaultModel) {
         setSelectedModelStr(`${defaultModel.providerId}:::${defaultModel.modelName}`);
       } else {
@@ -485,6 +497,30 @@ function ChatPage(props: ChatPageProps = {}) {
     if (props.threadId && activeThreadId() !== props.threadId) {
       selectThread(props.threadId);
     }
+  });
+
+  createEffect(() => {
+    const draft = typeof searchParams.draft === "string" ? searchParams.draft : "";
+    const autoSend = searchParams.autosend === "1";
+    if (!draft.trim()) return;
+    const draftKey = `${params.id || "root"}::${draft}`;
+    if (lastDraftKey() === draftKey) return;
+
+    setInput(draft);
+    setLastDraftKey(draftKey);
+
+    if (autoSend) {
+      const autoSendKey = `${draftKey}::autosend`;
+      if (lastAutoSendKey() !== autoSendKey) {
+        setLastAutoSendKey(autoSendKey);
+        // Let the route/thread mount settle before starting the stream send.
+        window.setTimeout(() => {
+          sendMessage(draft);
+        }, 20);
+      }
+    }
+
+    setSearchParams({ draft: undefined, autosend: undefined }, { replace: true });
   });
 
   // Send a message — uses SSE streaming for progressive assistant rendering
@@ -524,7 +560,29 @@ function ChatPage(props: ChatPageProps = {}) {
       for await (const { event, data } of chatApi.sendMessageStream(targetThreadId!, text, selectedProviderId, selectedModelName)) {
         switch (event) {
           case "user_saved":
-            setMessages((prev) => prev.map((m) => (m.id === optimisticId ? data.message : m)));
+            setMessages((prev) =>
+              prev.map((m) => {
+                if (m.id !== optimisticId) return m;
+                const saved = data?.message;
+                if (!saved || typeof saved !== "object") return m;
+                const savedContent =
+                  typeof (saved as { content?: unknown }).content === "string" &&
+                  ((saved as { content: string }).content || "").trim().length > 0
+                    ? (saved as { content: string }).content
+                    : m.content;
+                return {
+                  ...m,
+                  ...(saved as Record<string, unknown>),
+                  id: typeof (saved as { id?: unknown }).id === "string" ? (saved as { id: string }).id : m.id,
+                  role: "user",
+                  content: savedContent,
+                  createdAt:
+                    typeof (saved as { createdAt?: unknown }).createdAt === "string"
+                      ? (saved as { createdAt: string }).createdAt
+                      : m.createdAt,
+                };
+              }),
+            );
             break;
 
           case "thinking":
@@ -641,6 +699,31 @@ function ChatPage(props: ChatPageProps = {}) {
   }
 
   function handleKey(e: KeyboardEvent) {
+    if (showSlashMenu()) {
+      const options = slashWorkflowOptions();
+      if (e.key === "ArrowDown" && options.length > 0) {
+        e.preventDefault();
+        setHighlightedSlashIdx((prev) => (prev + 1) % options.length);
+        return;
+      }
+      if (e.key === "ArrowUp" && options.length > 0) {
+        e.preventDefault();
+        setHighlightedSlashIdx((prev) => (prev - 1 + options.length) % options.length);
+        return;
+      }
+      if ((e.key === "Enter" || e.key === "Tab") && options.length > 0) {
+        e.preventDefault();
+        selectSlashWorkflowByIndex(highlightedSlashIdx());
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        const current = input();
+        setInput(current.startsWith("/") ? current.slice(1) : current);
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
@@ -656,6 +739,65 @@ function ChatPage(props: ChatPageProps = {}) {
     return aggregatedModels()?.find(m => m.providerId === providerId && m.modelName === modelName);
   };
 
+  const providerTabs = createMemo(() => {
+    const fromModels = (aggregatedModels() || []).map((m) => normalizeProviderName(m.providerName));
+    const fromProviders = (providers() || []).map((p: any) => normalizeProviderName(p.provider));
+    const unique = Array.from(new Set([...fromModels, ...fromProviders]));
+    return ["all", ...unique];
+  });
+
+  const filteredModels = createMemo(() => {
+    const models = aggregatedModels() || [];
+    const byTab = modelProviderTab() === "all"
+      ? models
+      : models.filter((m) => m.providerName === modelProviderTab());
+    const q = modelSearchQuery().trim().toLowerCase();
+    if (!q) return byTab;
+    return byTab.filter((m) => m.modelName.toLowerCase().includes(q));
+  });
+
+  const slashQuery = createMemo(() => {
+    const value = input();
+    if (!value.startsWith("/")) return null;
+    return value.slice(1).trim().toLowerCase();
+  });
+
+  const slashWorkflowOptions = createMemo(() => {
+    const query = slashQuery();
+    if (query === null) return [];
+    const all = (allWorkflows() || []).filter((wf) => wf.enabled && !wf.archived);
+    if (!query) return all.slice(0, 8);
+    return all
+      .filter((wf) => {
+        const key = (wf.key || "").toLowerCase();
+        const name = (wf.name || "").toLowerCase();
+        return key.includes(query) || name.includes(query);
+      })
+      .slice(0, 8);
+  });
+
+  const showSlashMenu = createMemo(() => slashQuery() !== null);
+
+  function selectSlashWorkflowByIndex(index: number) {
+    const options = slashWorkflowOptions();
+    if (!options.length) return;
+    const safe = Math.min(Math.max(index, 0), options.length - 1);
+    const chosen = options[safe];
+    setInput(`Run workflow: ${chosen.key}`);
+    setHighlightedSlashIdx(0);
+  }
+
+  createEffect(() => {
+    void slashQuery();
+    setHighlightedSlashIdx(0);
+  });
+
+  const chatScaleStyle = createMemo(() => ({ "font-size": `${chatFontScale()}%` }));
+
+  const adjustChatFontScale = (delta: number) => {
+    setChatFontScale((prev) => Math.min(130, Math.max(85, prev + delta)));
+  };
+
   return (
     <>
       <Title>Chat — AutoPilot</Title>
@@ -666,11 +808,11 @@ function ChatPage(props: ChatPageProps = {}) {
           <div class="w-[272px] h-full flex flex-col">
             {/* Header */}
             <div class="px-4 py-4 flex items-center justify-between shrink-0">
-              <span class="text-[13px] uppercase tracking-[0.14em] text-neutral-400 font-semibold">Threads</span>
+              <span class="text-[13px] uppercase tracking-[0.14em] text-neutral-200 font-semibold">Threads</span>
               <div class="flex items-center gap-1">
                 <button
                   onClick={newThread}
-                  class="p-1.5 text-neutral-400 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200"
+                  class="p-1.5 text-neutral-300 hover:text-white hover:bg-white/8 rounded-lg transition-all duration-200"
                   title="New thread"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -679,7 +821,7 @@ function ChatPage(props: ChatPageProps = {}) {
                 {/* Fire button — clear all */}
                 <button
                   onClick={() => setConfirmModal({ type: "clear-all" })}
-                  class="p-1.5 text-neutral-500 hover:text-orange-400 hover:bg-orange-500/10 rounded-lg transition-all duration-200"
+                  class="p-1.5 text-neutral-400 hover:text-orange-300 hover:bg-orange-500/10 rounded-lg transition-all duration-200"
                   title="Clear all threads"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
@@ -687,7 +829,7 @@ function ChatPage(props: ChatPageProps = {}) {
 
                 <button
                   onClick={() => setIsSidebarOpen(false)}
-                  class="p-1.5 text-neutral-500 hover:text-neutral-300 hover:bg-white/5 rounded-lg transition-all duration-200"
+                  class="p-1.5 text-neutral-400 hover:text-neutral-100 hover:bg-white/8 rounded-lg transition-all duration-200"
                   title="Close sidebar"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><path d="M9 3v18" /><path d="m16 15-3-3 3-3" /></svg>
@@ -698,7 +840,7 @@ function ChatPage(props: ChatPageProps = {}) {
             {/* Thread list */}
             <div class={`flex-1 overflow-y-auto px-2 pb-3 space-y-px ${isBurning() ? "threads-burn-out" : ""}`}>
               <Show when={threads.loading}>
-                <div class="px-3 py-4 text-xs text-neutral-600">Loading...</div>
+                <div class="px-3 py-4 text-xs text-neutral-500">Loading...</div>
               </Show>
               <Show when={!threads.loading && (threads() || []).length === 0}>
                 <div class="flex flex-col items-center justify-center py-12 gap-3">
@@ -724,7 +866,7 @@ function ChatPage(props: ChatPageProps = {}) {
                           onClick={() => selectThread(thread.id)}
                           class="flex-1 flex items-center gap-2.5 text-left px-3 py-2.5 min-w-0"
                         >
-                          <svg class={`shrink-0 ${activeThreadId() === thread.id ? "text-neutral-400" : "text-neutral-600"}`} xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                          <svg class={`shrink-0 ${activeThreadId() === thread.id ? "text-neutral-300" : "text-neutral-500"}`} xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
                           <p class={`truncate text-[14px] ${activeThreadId() === thread.id ? "text-neutral-100 font-medium" : "text-neutral-400 group-hover:text-neutral-200"
                             }`}>{thread.title}</p>
                         </button>
@@ -808,12 +950,20 @@ function ChatPage(props: ChatPageProps = {}) {
                   {/* Modern Custom Dropdown */}
                   <div class="relative group">
                     <button
-                      onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen())}
+                      onClick={() => {
+                        const next = !isModelDropdownOpen();
+                        setIsModelDropdownOpen(next);
+                        if (next) {
+                          setModelProviderTab("all");
+                          setShowModelSearch(false);
+                          setModelSearchQuery("");
+                        }
+                      }}
                       class="bg-transparent flex items-center gap-2 text-[17px] font-medium text-neutral-300 hover:text-white hover:bg-white/5 px-3 py-1.5 rounded-xl transition-all duration-200 pr-8 cursor-pointer focus:outline-none"
                     >
                       <span>
                         <Show when={currentSelectionObj()} fallback="Select Model">
-                          {currentSelectionObj()?.providerName.charAt(0).toUpperCase() + currentSelectionObj()?.providerName.slice(1)!}: {currentSelectionObj()?.modelName}
+                          {prettyProviderName(currentSelectionObj()?.providerName)}: {currentSelectionObj()?.modelName}
                         </Show>
                       </span>
                       <div class="absolute inset-y-0 right-0 flex items-center px-2 text-neutral-500 pointer-events-none">
@@ -827,9 +977,65 @@ function ChatPage(props: ChatPageProps = {}) {
 
                       {/* Dropdown Menu - glass effect, nice border, max ~6 items height */}
                       <div class="absolute top-full left-0 mt-1.5 min-w-full w-max z-50 bg-[#1a1a1a]/95 backdrop-blur-xl border border-neutral-800/40 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.6)] overflow-hidden">
+                        <div class="px-3 pt-2 pb-0 border-b border-neutral-800/60">
+                          <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-4 overflow-x-auto scrollbar-thin pr-1">
+                              <For each={providerTabs()}>
+                                {(tab) => (
+                                  <button
+                                    onClick={() => setModelProviderTab(tab)}
+                                    class={`relative pb-2 text-xs whitespace-nowrap transition-all duration-150 border-b-2 ${
+                                      modelProviderTab() === tab
+                                        ? "text-neutral-100 border-neutral-100"
+                                        : "text-neutral-500 border-transparent hover:text-neutral-300"
+                                    }`}
+                                  >
+                                    {tab === "all" ? "All" : prettyProviderName(tab)}
+                                  </button>
+                                )}
+                              </For>
+                            </div>
+
+                            <button
+                              onClick={() => {
+                                const next = !showModelSearch();
+                                setShowModelSearch(next);
+                                if (!next) setModelSearchQuery("");
+                              }}
+                              class={`mb-2 shrink-0 rounded-md p-1.5 transition-colors ${
+                                showModelSearch()
+                                  ? "text-neutral-100 bg-white/10"
+                                  : "text-neutral-500 hover:text-neutral-300 hover:bg-white/5"
+                              }`}
+                              title="Search models"
+                              aria-label="Search models"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="11" cy="11" r="8" />
+                                <path d="m21 21-4.3-4.3" />
+                              </svg>
+                            </button>
+                          </div>
+
+                          <Show when={showModelSearch()}>
+                            <div class="pt-2 pb-2">
+                              <input
+                                type="text"
+                                value={modelSearchQuery()}
+                                onInput={(e) => setModelSearchQuery(e.currentTarget.value)}
+                                placeholder="Filter models by name..."
+                                class="w-full h-8 rounded-lg border border-neutral-800/80 bg-neutral-900/80 px-2.5 text-xs text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-neutral-600"
+                              />
+                            </div>
+                          </Show>
+                        </div>
+
                         {/* 6 items * ~40px + padding = 250px max height */}
                         <div class="max-h-[250px] overflow-y-auto scrollbar-custom py-2 flex flex-col">
-                          <For each={aggregatedModels()}>
+                          <Show when={filteredModels().length > 0} fallback={
+                            <div class="px-4 py-5 text-xs text-neutral-500">No models in this provider.</div>
+                          }>
+                          <For each={filteredModels()}>
                             {(m) => {
                               const val = `${m.providerId}:::${m.modelName}`;
                               const isSelected = selectedModelStr() === val;
@@ -842,17 +1048,38 @@ function ChatPage(props: ChatPageProps = {}) {
                                   <Show when={isSelected} fallback={<div class="w-4 shrink-0"></div>}>
                                     <svg class="shrink-0" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                                   </Show>
-                                  <span class="truncate">{m.providerName.charAt(0).toUpperCase() + m.providerName.slice(1)}: {m.modelName}</span>
+                                  <span class="truncate">{prettyProviderName(m.providerName)}: {m.modelName}</span>
                                 </button>
                               );
                             }}
                           </For>
+                          </Show>
                         </div>
                       </div>
                     </Show>
                   </div>
                 </Show>
               </Show>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                onClick={() => setIsCustomizePanelOpen(true)}
+                class="w-9 h-9 rounded-lg border border-neutral-800/70 bg-neutral-900/70 text-neutral-400 hover:text-neutral-100 hover:border-neutral-600 hover:bg-neutral-800/80 transition-colors flex items-center justify-center"
+                title="Customize chat"
+                aria-label="Customize chat"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="4" y1="21" x2="4" y2="14"></line>
+                  <line x1="4" y1="10" x2="4" y2="3"></line>
+                  <line x1="12" y1="21" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12" y2="3"></line>
+                  <line x1="20" y1="21" x2="20" y2="16"></line>
+                  <line x1="20" y1="12" x2="20" y2="3"></line>
+                  <line x1="2" y1="14" x2="6" y2="14"></line>
+                  <line x1="10" y1="8" x2="14" y2="8"></line>
+                  <line x1="18" y1="16" x2="22" y2="16"></line>
+                </svg>
+              </button>
             </div>
           </header>
 
@@ -864,6 +1091,7 @@ function ChatPage(props: ChatPageProps = {}) {
               ref={feedRef}
               onScroll={updateScrollToBottomVisibility}
               class={`overflow-y-auto scroll-smooth ${(messages().length === 0 && !streamMsg.active) ? "hidden" : "flex-1 pb-2"}`}
+              style={chatScaleStyle()}
             >
               <div class="chat-feed w-full max-w-6xl mx-auto px-5 py-6 flex flex-col min-h-full">
 
@@ -872,6 +1100,7 @@ function ChatPage(props: ChatPageProps = {}) {
                     <MessageBubble
                       role={msg.role}
                       content={msg.content}
+                      textScale={chatFontScale()}
                       blocks={msg.role === "assistant" ? getAssistantBlocks(msg) : undefined}
                       state="completed"
                       onTaskOpen={openTaskDetails}
@@ -891,6 +1120,7 @@ function ChatPage(props: ChatPageProps = {}) {
                 <Show when={streamMsg.active}>
                   <MessageBubble
                     role="assistant"
+                    textScale={chatFontScale()}
                     blocks={streamMsg.blocks}
                     state={streamMsg.state}
                     streamingBlockIdx={streamMsg.streamingBlockIdx}
@@ -905,7 +1135,7 @@ function ChatPage(props: ChatPageProps = {}) {
 
             {/* Chat Centered Empty State (AutoPilot Intro) */}
             <Show when={messages().length === 0 && !streamMsg.active}>
-              <div class="flex flex-col items-center justify-center pb-8 gap-5 text-center w-full mt-[-40px]">
+              <div class="flex flex-col items-center justify-center pb-8 gap-5 text-center w-full mt-[-40px]" style={chatScaleStyle()}>
                 <div class="flex items-center gap-3">
                   <div class="w-11 h-11 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
@@ -942,6 +1172,57 @@ function ChatPage(props: ChatPageProps = {}) {
 
 
                 <div class="w-full relative flex items-end gap-2 rounded-[26px] bg-[#2a2a2a] border border-neutral-700/30 px-3 py-2 shadow-sm transition-all duration-200 focus-within:border-neutral-600/50">
+                  <Show when={showSlashMenu()}>
+                    <div class="absolute left-0 right-0 bottom-[calc(100%+10px)] z-40 rounded-2xl border border-neutral-700/90 bg-[#121314] shadow-[0_10px_28px_rgba(0,0,0,0.42)] overflow-hidden">
+                      <div class="px-3 py-2.5 border-b border-neutral-800/80 flex items-center justify-between gap-3">
+                        <p class="text-[11px] uppercase tracking-[0.14em] text-neutral-400 font-medium">Workflows</p>
+                        <p class="text-[10px] text-neutral-500">↑ ↓ Enter</p>
+                      </div>
+                      <Show
+                        when={slashWorkflowOptions().length > 0}
+                        fallback={
+                          <p class="px-3 py-3 text-sm text-neutral-500">
+                            {allWorkflows.loading ? "Loading workflows..." : "No workflow matched your slash query."}
+                          </p>
+                        }
+                      >
+                        <div class="max-h-[260px] overflow-y-auto p-1.5" role="listbox" aria-label="Workflow slash suggestions">
+                          <For each={slashWorkflowOptions()}>
+                            {(wf, idx) => (
+                              <button
+                                onMouseDown={(ev) => ev.preventDefault()}
+                                onMouseEnter={() => setHighlightedSlashIdx(idx())}
+                                onClick={() => selectSlashWorkflowByIndex(idx())}
+                                role="option"
+                                aria-selected={highlightedSlashIdx() === idx()}
+                                class={`w-full text-left px-3 py-2.5 rounded-xl transition-colors duration-120 relative mb-1 last:mb-0 border ${
+                                  highlightedSlashIdx() === idx()
+                                    ? "bg-neutral-800/95 text-neutral-100 border-neutral-600/80"
+                                    : "text-neutral-300 border-transparent hover:bg-neutral-900 hover:border-neutral-700/80"
+                                }`}
+                              >
+                                <div class="flex items-center justify-between gap-3">
+                                  <div class="min-w-0">
+                                    <p class={`text-sm font-medium truncate ${highlightedSlashIdx() === idx() ? "text-white" : "text-neutral-100"}`}>{wf.name}</p>
+                                    <p class={`text-xs truncate ${highlightedSlashIdx() === idx() ? "text-neutral-300" : "text-neutral-500"}`}>/{wf.key}</p>
+                                  </div>
+                                  <span
+                                    class={`text-[11px] px-2.5 py-1 rounded-lg border font-medium ${
+                                      highlightedSlashIdx() === idx()
+                                        ? "text-neutral-100 border-neutral-500 bg-neutral-700/70"
+                                        : "text-neutral-400 border-neutral-700/80 bg-neutral-900/70"
+                                    }`}
+                                  >
+                                    Run
+                                  </span>
+                                </div>
+                              </button>
+                            )}
+                          </For>
+                        </div>
+                      </Show>
+                    </div>
+                  </Show>
 
                   {/* Left Attachment Button (+) */}
                   <button class="shrink-0 flex items-center justify-center w-9 h-9 text-neutral-600 hover:text-neutral-300 rounded-full transition-all duration-200 mb-0.5" title="Attach">
@@ -989,7 +1270,7 @@ function ChatPage(props: ChatPageProps = {}) {
 
                 {/* Suggestions (Only visible when empty) */}
                 <Show when={messages().length === 0 && !streamMsg.active}>
-                  <div class="w-full grid grid-cols-1 md:grid-cols-3 gap-3 mt-4 px-2">
+                  <div class="w-full grid grid-cols-1 md:grid-cols-3 gap-3 mt-4 px-2" style={chatScaleStyle()}>
                     <div onClick={() => sendMessage("Add task: Reply to Sarah Jenkins about contract changes by 5 PM")} class="bg-[#2a2a2a] border border-neutral-700/30 hover:border-indigo-500/30 hover:bg-[#323232] transition-all duration-200 p-4 rounded-2xl cursor-pointer group">
                       <div class="flex items-center gap-2 mb-1.5">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
@@ -1021,6 +1302,75 @@ function ChatPage(props: ChatPageProps = {}) {
           </div>
         </div>
       </main>
+
+      <Show when={isCustomizePanelOpen()}>
+        <div class="fixed inset-0 z-[105]">
+          <button
+            class="absolute inset-0 bg-black/40"
+            aria-label="Close customization panel"
+            onClick={() => setIsCustomizePanelOpen(false)}
+          />
+          <aside class="absolute right-0 top-0 h-full w-[320px] border-l border-neutral-800/70 bg-[#0f0f11] shadow-2xl shadow-black/70 p-5 flex flex-col">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-neutral-100">Customize Chat</h3>
+              <button
+                onClick={() => setIsCustomizePanelOpen(false)}
+                class="w-8 h-8 rounded-lg border border-neutral-800/70 bg-neutral-900/70 text-neutral-400 hover:text-neutral-100 hover:border-neutral-600 transition-colors flex items-center justify-center"
+                aria-label="Close customization panel"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+
+            <p class="text-xs text-neutral-500 mt-1">Adjust chat text scaling for readability.</p>
+
+            <div class="mt-5 rounded-xl border border-neutral-800/70 bg-[linear-gradient(180deg,rgba(28,28,33,0.82),rgba(18,18,20,0.86))] p-4">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-medium text-neutral-300">Text size</span>
+                <span class="text-xs text-neutral-400">{chatFontScale()}%</span>
+              </div>
+
+              <div class="mt-3 flex items-center gap-2">
+                <button
+                  onClick={() => adjustChatFontScale(-5)}
+                  disabled={chatFontScale() <= 85}
+                  class="w-9 h-9 rounded-lg border border-neutral-700/80 bg-neutral-900/80 text-neutral-300 hover:text-white hover:border-neutral-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  aria-label="Decrease chat text size"
+                >
+                  A-
+                </button>
+                <input
+                  type="range"
+                  min="85"
+                  max="130"
+                  step="1"
+                  value={chatFontScale()}
+                  onInput={(e) => setChatFontScale(Number(e.currentTarget.value))}
+                  class="flex-1 accent-indigo-500"
+                  aria-label="Chat text size scale"
+                />
+                <button
+                  onClick={() => adjustChatFontScale(5)}
+                  disabled={chatFontScale() >= 130}
+                  class="w-9 h-9 rounded-lg border border-neutral-700/80 bg-neutral-900/80 text-neutral-300 hover:text-white hover:border-neutral-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  aria-label="Increase chat text size"
+                >
+                  A+
+                </button>
+              </div>
+
+              <div class="mt-3 flex items-center justify-end">
+                <button
+                  onClick={() => setChatFontScale(100)}
+                  class="text-xs px-3 py-1.5 rounded-lg border border-neutral-700/80 text-neutral-300 hover:text-white hover:border-neutral-500 hover:bg-neutral-900/80 transition-colors"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </Show>
 
       {/* Confirmation Modal */}
       <Show when={confirmModal()}>

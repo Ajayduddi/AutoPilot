@@ -12,11 +12,13 @@ export class ApprovalService {
     return ApprovalRepo.getPendingApprovals(userId);
   }
 
-  static async resolve(approvalId: string, status: "approved" | "rejected") {
-    const approval = await ApprovalRepo.resolveApproval(approvalId, status);
+  static async resolve(approvalId: string, userId: string, status: "approved" | "rejected") {
+    const approval = await ApprovalRepo.resolveApproval(approvalId, userId, status);
     // When an approval is resolved, we could emit an event here to notify UI 
     // to dynamically update any pending approval cards!
-    eventBus.emit(EventTypes.WORKFLOW_RUN_UPDATED, { type: 'approval_resolved', approval });
+    if (approval) {
+      eventBus.emit(EventTypes.WORKFLOW_RUN_UPDATED, { type: 'approval_resolved', approval });
+    }
     return approval;
   }
 }

@@ -1,6 +1,6 @@
 import { MetaProvider, Title, Meta, Link } from "@solidjs/meta";
-import { Router, Route } from "@solidjs/router";
-import { ErrorBoundary } from "solid-js";
+import { Router, Route, useLocation, useNavigate } from "@solidjs/router";
+import { ErrorBoundary, Show, createEffect } from "solid-js";
 import { AppLayout } from "./components/layout/AppLayout";
 import { Sidebar } from "./components/layout/Sidebar";
 import Home from "./routes/index";
@@ -10,6 +10,10 @@ import WorkflowDetail from "./routes/workflow-detail";
 import Notifications from "./routes/notifications";
 import Approvals from "./routes/approvals";
 import Settings from "./routes/settings";
+import LoginPage from "./routes/login";
+import OnboardingPage from "./routes/onboarding";
+import { NotificationsProvider } from "./context/notifications.context";
+import { AuthProvider, useAuth } from "./context/auth.context";
 import "./app.css";
 
 function GlobalErrorFallback(err: Error) {
@@ -28,30 +32,78 @@ function GlobalErrorFallback(err: Error) {
   );
 }
 
+function RootShell(props: { children: any }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const auth = useAuth();
+
+  const isAuthRoute = () => location.pathname === "/login" || location.pathname === "/onboarding";
+
+  createEffect(() => {
+    const state = auth.state();
+    if (!state) return;
+
+    if (isAuthRoute()) {
+      if (state.mode === "authenticated") navigate("/", { replace: true });
+      if (location.pathname === "/login" && state.mode === "onboarding") navigate("/onboarding", { replace: true });
+      if (location.pathname === "/onboarding" && state.mode === "login") navigate("/login", { replace: true });
+      return;
+    }
+
+    if (state.mode === "onboarding") navigate("/onboarding", { replace: true });
+    if (state.mode === "login") navigate("/login", { replace: true });
+  });
+
+  return (
+    <Show
+      when={!isAuthRoute()}
+      fallback={<main class="min-h-screen bg-[#0a0a0a] text-neutral-100">{props.children}</main>}
+    >
+      <Show
+        when={!auth.loading()}
+        fallback={
+          <main class="min-h-screen bg-[#0a0a0a] text-neutral-100 flex items-center justify-center">
+            <p class="text-sm text-neutral-400">Checking session...</p>
+          </main>
+        }
+      >
+      <NotificationsProvider>
+        <AppLayout>
+          <Sidebar />
+          <ErrorBoundary fallback={(err) => GlobalErrorFallback(err)}>
+            {props.children}
+          </ErrorBoundary>
+        </AppLayout>
+      </NotificationsProvider>
+      </Show>
+    </Show>
+  );
+}
+
 export default function App() {
   return (
     <Router
       root={(props) => (
         <MetaProvider>
-          {/* Global Meta */}
-          <Title>AutoPilot – Chat Automation Platform</Title>
+          <Title>AutoPilot</Title>
           <Meta name="description" content="Trigger and manage your n8n automations through a unified chat interface." />
           <Meta name="theme-color" content="#6366f1" />
           <Meta name="mobile-web-app-capable" content="yes" />
           <Meta name="apple-mobile-web-app-capable" content="yes" />
           <Meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
           <Meta name="apple-mobile-web-app-title" content="AutoPilot" />
+          <Link rel="icon" type="image/svg+xml" href="/icons/icon-512.svg" />
+          <Link rel="apple-touch-icon" href="/icons/icon-512.svg" />
           <Link rel="manifest" href="/manifest.json" />
 
-          <AppLayout>
-            <Sidebar />
-            <ErrorBoundary fallback={(err) => GlobalErrorFallback(err)}>
-              {props.children}
-            </ErrorBoundary>
-          </AppLayout>
+          <AuthProvider>
+            <RootShell>{props.children}</RootShell>
+          </AuthProvider>
         </MetaProvider>
       )}
     >
+      <Route path="/login" component={LoginPage} />
+      <Route path="/onboarding" component={OnboardingPage} />
       <Route path="/" component={Home} />
       <Route path="/workflows" component={Workflows} />
       <Route path="/workflows/:id" component={WorkflowDetail} />

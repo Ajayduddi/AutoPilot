@@ -9,7 +9,7 @@ const router = Router();
 router.get('/:runId', async (req, res, next) => {
   try {
     const run = await WorkflowService.getRunById(req.params.runId);
-    if (!run) {
+    if (!run || run.userId !== req.auth!.user.id) {
       return res.status(404).json({
         status: 'error',
         error: { code: 'NOT_FOUND', message: 'Workflow run not found' },
@@ -59,7 +59,7 @@ router.get('/:runId', async (req, res, next) => {
 router.get('/trace/:traceId', async (req, res, next) => {
   try {
     const run = await WorkflowService.getRunByTraceId(req.params.traceId);
-    if (!run) {
+    if (!run || run.userId !== req.auth!.user.id) {
       return res.status(404).json({
         status: 'error',
         error: { code: 'NOT_FOUND', message: 'No run found for this trace ID' },

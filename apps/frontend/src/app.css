@@ -128,6 +128,44 @@ select option:checked {
   animation: fadeIn 0.15s ease-out both;
 }
 
+/* Notification cards ease in when a live event arrives. */
+@keyframes notificationArrive {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+    box-shadow: 0 0 0 rgba(59, 130, 246, 0);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    box-shadow: 0 18px 44px rgba(37, 99, 235, 0.12);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+  }
+}
+
+.notification-arrive {
+  animation: notificationArrive 0.45s ease-out both;
+}
+
+@keyframes toastEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) translateX(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateX(0) scale(1);
+  }
+}
+
+.toast-enter {
+  animation: toastEnter 0.24s ease-out both;
+}
+
 /* Ensure chat feed rows can span the full available pane width */
 .chat-feed > * {
   width: 100%;
@@ -148,7 +186,7 @@ select option:checked {
   --ai-md-block-gap: 0.95rem;
   background: transparent;
   color: #f1f5f9;
-  font-size: 0.855rem;
+  font-size: 1em;
   line-height: 1.88;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
   max-width: none !important;
@@ -178,10 +216,10 @@ select option:checked {
   margin: 1.25rem 0 0.45rem;
 }
 
-.markdown-body.ai-markdown h1 { font-size: 1.25rem; }
-.markdown-body.ai-markdown h2 { font-size: 1.1rem; border-bottom-color: rgba(115, 115, 115, 0.3); }
-.markdown-body.ai-markdown h3 { font-size: 1rem; }
-.markdown-body.ai-markdown h4 { font-size: 0.94rem; color: #e5e7eb; }
+.markdown-body.ai-markdown h1 { font-size: 1.25em; }
+.markdown-body.ai-markdown h2 { font-size: 1.1em; border-bottom-color: rgba(115, 115, 115, 0.3); }
+.markdown-body.ai-markdown h3 { font-size: 1em; }
+.markdown-body.ai-markdown h4 { font-size: 0.94em; color: #e5e7eb; }
 
 .markdown-body.ai-markdown ul,
 .markdown-body.ai-markdown ol {
@@ -391,6 +429,20 @@ select option:checked {
 }
 
 .workflow-dim {
+  color: #737373;
+}
+
+.page-title {
+  font-size: 15px;
+  line-height: 1.25;
+  font-weight: 600;
+  color: #f5f5f5;
+}
+
+.page-subtitle {
+  margin-top: 0.25rem;
+  font-size: 12px;
+  line-height: 1.4;
   color: #737373;
 }
 

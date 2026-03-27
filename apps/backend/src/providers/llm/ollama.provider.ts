@@ -3,8 +3,15 @@ import { ILLMProvider, WorkflowContext, ParsedIntent, ConversationMessage, Retri
 export class OllamaProvider implements ILLMProvider {
   name = 'ollama';
 
-  constructor(private modelName: string, private baseUrl: string) {
+  constructor(private modelName: string, private baseUrl: string, private apiKey?: string) {
     this.baseUrl = this.baseUrl.replace(/\/$/, "");
+  }
+
+  private buildHeaders(contentType = true): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (contentType) headers['Content-Type'] = 'application/json';
+    if (this.apiKey?.trim()) headers['Authorization'] = `Bearer ${this.apiKey.trim()}`;
+    return headers;
   }
 
   // ── Shared helpers ───────────────────────────────────────────────
@@ -70,7 +77,7 @@ CRITICAL: When the user asks you to do something — DO IT. Never respond with "
     try {
       const response = await fetch(`${this.baseUrl}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.buildHeaders(true),
         body: JSON.stringify({
           model: this.modelName,
           messages,
@@ -151,7 +158,7 @@ BEHAVIOR:
 
       const response = await fetch(`${this.baseUrl}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.buildHeaders(true),
         body: JSON.stringify({
           model: this.modelName,
           messages,
@@ -187,7 +194,7 @@ BEHAVIOR:
 
     const response = await fetch(`${this.baseUrl}/api/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.buildHeaders(true),
       body: JSON.stringify({
         model: this.modelName,
         messages,

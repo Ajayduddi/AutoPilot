@@ -8,6 +8,8 @@
   ],
   "scripts": {
     "dev": "bun --filter='*' run dev",
-    "build": "bun --filter='*' run build"
+    "build": "bun --filter='*' run build",
+    "typecheck": "bun --filter='*' run typecheck",
+    "test": "bun --filter='*' run test"
   }
 }

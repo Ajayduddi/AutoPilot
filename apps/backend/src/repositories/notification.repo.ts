@@ -1,10 +1,11 @@
-import { eq, desc } from 'drizzle-orm';
+import { and, eq, desc, lt } from 'drizzle-orm';
 import { db } from '../db';
 import { notifications } from '../db/schema';
+import { randomUUID } from 'crypto';
 
 export const NotificationRepo = {
   async createNotification(userId: string, data: { type: 'workflow_event' | 'approval_request' | 'system', title: string, message?: string, runId?: string, payload?: any }) {
-    const id = `notif_${Date.now()}`;
+    const id = `notif_${randomUUID()}`;
     const [notif] = await db.insert(notifications).values({
       id,
       userId,
@@ -17,18 +18,30 @@ export const NotificationRepo = {
     return notif;
   },
 
-  async getUserNotifications(userId: string) {
+  async getUserNotifications(userId: string, opts?: { limit?: number; before?: string }) {
+    const limit = Math.max(1, Math.min(200, opts?.limit || 50));
+    const where = opts?.before
+      ? and(eq(notifications.userId, userId), lt(notifications.createdAt, new Date(opts.before)))
+      : eq(notifications.userId, userId);
     return await db.query.notifications.findMany({
-      where: eq(notifications.userId, userId),
+      where,
       orderBy: [desc(notifications.createdAt)],
+      limit,
     });
   },
 
-  async markAsRead(notificationId: string) {
+  async markAsRead(notificationId: string, userId: string) {
     const [notif] = await db.update(notifications)
       .set({ read: true })
-      .where(eq(notifications.id, notificationId))
+      .where(and(eq(notifications.id, notificationId), eq(notifications.userId, userId)))
       .returning();
     return notif;
+  },
+
+  async deleteAllForUser(userId: string) {
+    const deleted = await db.delete(notifications)
+      .where(eq(notifications.userId, userId))
+      .returning({ id: notifications.id });
+    return deleted.length;
   }
 };

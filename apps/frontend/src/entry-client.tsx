@@ -52,16 +52,6 @@ try {
 // Register/unregister service worker after mount so SW issues never block UI render.
 if (typeof window !== "undefined" && "serviceWorker" in navigator) {
   Promise.resolve().then(() => {
-    if (import.meta.env.DEV) {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        for (const registration of registrations) {
-          registration.unregister();
-          console.log("[SW] Unregistered:", registration.scope);
-        }
-      }).catch((err) => console.error("[SW] Unregistration failed:", err));
-      return;
-    }
-
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("/sw.js").then(
         (registration) => console.log("[SW] Registered:", registration.scope),

@@ -4,8 +4,33 @@ import { useNavigate } from "@solidjs/router";
 import { WorkflowListCard } from "../components/workflow/WorkflowListCard";
 import { Button } from "../components/ui/Button";
 import { CustomSelect } from "../components/ui/CustomSelect";
+import { WorkflowIcon } from "../components/ui/icons";
 import { workflowsApi } from "../lib/api";
 import { authTypeOptions, httpMethodOptions, providerFilterOptions as providers, providerOptions, triggerMethodOptions, visibilityOptions } from "../lib/workflow-form-options";
+import { buildWorkflowAuthConfig, computeWorkflowStats, parseOptionalJson, type WorkflowCreateFormState } from "./workflows.helpers";
+
+const FilterIcon = (paths: string[]) => () => (
+  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    {paths.map((d) => <path d={d} />)}
+  </svg>
+);
+
+const allFiltersIcon = FilterIcon(["M3 5h18", "M6 12h12", "M10 19h4"]);
+const visibilityAllIcon = FilterIcon(["M3 12s4-7 9-7 9 7 9 7-4 7-9 7-9-7-9-7", "M12 12h.01"]);
+
+const providerIcons = new Map(
+  providerOptions.map((option) => [option.value, option.icon] as const)
+);
+
+const providerFilterOptions = providers.map((option) => ({
+  ...option,
+  icon: option.value ? providerIcons.get(option.value) : allFiltersIcon,
+}));
+
+const visibilityFilterOptions = [
+  { value: "", label: "All Visibility", icon: visibilityAllIcon },
+  ...visibilityOptions,
+];
 
 export default function Workflows() {
   const navigate = useNavigate();
@@ -26,7 +51,7 @@ export default function Workflows() {
     setViewMode(mode);
     localStorage.setItem("wf-view-mode", mode);
   }
-  const emptyForm = {
+  const emptyForm: WorkflowCreateFormState = {
     key: "", name: "", description: "", provider: "n8n", visibility: "public",
     triggerMethod: "webhook", executionEndpoint: "", httpMethod: "POST", authType: "none", tags: "",
     enabled: true, requiresApproval: false,
@@ -35,21 +60,10 @@ export default function Workflows() {
     bearerToken: "", apiKeyName: "", apiKeyValue: "",
     headerName: "", headerSecret: "", customAuthJson: "{}",
   };
-  const [form, setForm] = createSignal({ ...emptyForm });
+  const [form, setForm] = createSignal<WorkflowCreateFormState>({ ...emptyForm });
 
-  function updateField(field: string, value: string) {
+  function updateField(field: keyof WorkflowCreateFormState, value: string) {
     setForm(prev => ({ ...prev, [field]: value }));
-  }
-
-  function buildAuthConfig(): Record<string, any> | undefined {
-    const f = form();
-    switch (f.authType) {
-      case "bearer":  return f.bearerToken ? { token: f.bearerToken } : undefined;
-      case "api_key":  return f.apiKeyValue ? { keyName: f.apiKeyName || "x-api-key", keyValue: f.apiKeyValue } : undefined;
-      case "header_secret": return f.headerSecret ? { headerName: f.headerName || "x-secret", secret: f.headerSecret } : undefined;
-      case "custom": try { const j = JSON.parse(f.customAuthJson); return Object.keys(j).length ? j : undefined; } catch { return undefined; }
-      default: return undefined;
-    }
   }
 
   async function handleCreate() {
@@ -58,18 +72,8 @@ export default function Workflows() {
     setCreating(true);
     setCreateError(null);
     try {
-      let inputSchema: any = undefined;
-      let outputSchema: any = undefined;
-      try {
-        inputSchema = f.inputSchemaJson.trim() ? JSON.parse(f.inputSchemaJson) : undefined;
-      } catch {
-        setCreateError("Input Schema must be valid JSON"); return;
-      }
-      try {
-        outputSchema = f.outputSchemaJson.trim() ? JSON.parse(f.outputSchemaJson) : undefined;
-      } catch {
-        setCreateError("Output Schema must be valid JSON"); return;
-      }
+      const inputSchema = parseOptionalJson(f.inputSchemaJson, "Input Schema");
+      const outputSchema = parseOptionalJson(f.outputSchemaJson, "Output Schema");
 
       await workflowsApi.create({
         key: f.key,
@@ -81,7 +85,7 @@ export default function Workflows() {
         executionEndpoint: f.executionEndpoint || undefined,
         httpMethod: f.httpMethod,
         authType: f.authType,
-        authConfig: buildAuthConfig(),
+        authConfig: buildWorkflowAuthConfig(f),
         enabled: f.enabled,
         requiresApproval: f.requiresApproval,
         inputSchema,
@@ -91,8 +95,9 @@ export default function Workflows() {
       setShowCreateForm(false);
       setForm({ ...emptyForm });
       await refetch();
-    } catch (e: any) {
-      setCreateError(e.message || "Failed to create workflow");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to create workflow";
+      setCreateError(message);
     } finally {
       setCreating(false);
     }
@@ -108,30 +113,23 @@ export default function Workflows() {
     search: search() || undefined,
   }));
 
-  const [workflows, { refetch }] = createResource(filters, (f) => workflowsApi.getAll(f as any));
+  const [workflows, { refetch }] = createResource(filters, (f) => workflowsApi.getAll(f));
 
   async function handleTrigger(id: string) {
     setTriggering(id);
     try {
       await workflowsApi.trigger(id, { source: "ui", input: {} });
       await refetch();
-    } catch (e: any) {
-      console.error("Trigger failed:", e.message);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Unknown error";
+      console.error("Trigger failed:", message);
     } finally {
       setTriggering(null);
     }
   }
 
   const stats = createMemo(() => {
-    const wfs = workflows() || [];
-    return {
-      total: wfs.length,
-      enabled: wfs.filter((w: any) => w.enabled && !w.archived).length,
-      byProvider: providers.slice(1).map(p => ({
-        ...p,
-        count: wfs.filter((w: any) => w.provider === p.value).length,
-      })).filter(p => p.count > 0),
-    };
+    return computeWorkflowStats(workflows() || [], providers);
   });
 
   return (
@@ -142,8 +140,8 @@ export default function Workflows() {
         <header class="px-6 py-4 border-b border-neutral-800/20 bg-transparent shrink-0">
           <div class="workflow-shell flex items-center justify-between">
             <div>
-              <h1 class="text-[14px] font-medium text-neutral-200 tracking-tight">Workflow Registry</h1>
-              <p class="text-[12px] workflow-muted mt-1">Manage, trigger, and monitor your automations across all providers.</p>
+              <h1 class="page-title">Workflow Registry</h1>
+              <p class="page-subtitle">Manage, trigger, and monitor your automations across all providers.</p>
             </div>
             <div class="flex items-center gap-3">
               <Show when={stats().byProvider.length > 0}>
@@ -168,159 +166,164 @@ export default function Workflows() {
 
         {/* Create Workflow Form */}
         <Show when={showCreateForm()}>
-          <div class="px-6 py-4 border-b border-neutral-800/20 bg-neutral-900/20 block-enter">
+          <div class="px-6 py-5 border-b border-neutral-800/20 bg-transparent block-enter">
             <div class="workflow-shell">
-              <h3 class="text-sm font-semibold text-slate-100 mb-4">New Workflow</h3>
-              <Show when={createError()}>
-                <div class="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400 mb-4">
-                  {createError()}
+              <div class="rounded-2xl border border-neutral-800/70 bg-neutral-950/60 shadow-[0_18px_40px_rgba(0,0,0,0.24)] p-5 lg:p-6">
+                <div class="flex items-center justify-between mb-4">
+                  <h3 class="text-sm font-semibold text-slate-100">New Workflow</h3>
+                  <span class="text-[10px] uppercase tracking-[0.12em] text-neutral-500">Quick Setup</span>
                 </div>
-              </Show>
+                <Show when={createError()}>
+                  <div class="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400 mb-4">
+                    {createError()}
+                  </div>
+                </Show>
 
-              {/* Row 1: Key, Name, Provider, Visibility */}
-              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-                <div class="flex flex-col gap-1">
-                  <label class="text-[10px] uppercase tracking-wider workflow-muted">Key *</label>
-                  <input placeholder="wf_my_flow" value={form().key} onInput={e => updateField("key", e.currentTarget.value)} class={inputCls} />
+                {/* Row 1: Key, Name, Provider, Visibility */}
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[10px] uppercase tracking-wider workflow-muted">Key *</label>
+                    <input placeholder="wf_my_flow" value={form().key} onInput={e => updateField("key", e.currentTarget.value)} class={inputCls} />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[10px] uppercase tracking-wider workflow-muted">Name *</label>
+                    <input placeholder="My Workflow" value={form().name} onInput={e => updateField("name", e.currentTarget.value)} class={inputCls} />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[10px] uppercase tracking-wider workflow-muted">Provider</label>
+                    <CustomSelect options={providerOptions} value={form().provider} onChange={v => updateField("provider", v)} />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[10px] uppercase tracking-wider workflow-muted">Visibility</label>
+                    <CustomSelect options={visibilityOptions} value={form().visibility} onChange={v => updateField("visibility", v)} />
+                  </div>
                 </div>
-                <div class="flex flex-col gap-1">
-                  <label class="text-[10px] uppercase tracking-wider workflow-muted">Name *</label>
-                  <input placeholder="My Workflow" value={form().name} onInput={e => updateField("name", e.currentTarget.value)} class={inputCls} />
-                </div>
-                <div class="flex flex-col gap-1">
-                  <label class="text-[10px] uppercase tracking-wider workflow-muted">Provider</label>
-                  <CustomSelect options={providerOptions} value={form().provider} onChange={v => updateField("provider", v)} />
-                </div>
-                <div class="flex flex-col gap-1">
-                  <label class="text-[10px] uppercase tracking-wider workflow-muted">Visibility</label>
-                  <CustomSelect options={visibilityOptions} value={form().visibility} onChange={v => updateField("visibility", v)} />
-                </div>
-              </div>
 
-              {/* Row 2: Trigger Method, Endpoint, HTTP Method, Auth Type */}
-              <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-                <div class="flex flex-col gap-1">
-                  <label class="text-[10px] uppercase tracking-wider workflow-muted">Trigger Method</label>
-                  <CustomSelect options={triggerMethodOptions} value={form().triggerMethod} onChange={v => updateField("triggerMethod", v)} />
+                {/* Row 2: Trigger Method, Endpoint, HTTP Method, Auth Type */}
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[10px] uppercase tracking-wider workflow-muted">Trigger Method</label>
+                    <CustomSelect options={triggerMethodOptions} value={form().triggerMethod} onChange={v => updateField("triggerMethod", v)} />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[10px] uppercase tracking-wider workflow-muted">Webhook / Execution URL</label>
+                    <input placeholder="https://..." value={form().executionEndpoint} onInput={e => updateField("executionEndpoint", e.currentTarget.value)} class={inputCls} />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[10px] uppercase tracking-wider workflow-muted">HTTP Method</label>
+                    <CustomSelect options={httpMethodOptions} value={form().httpMethod} onChange={v => updateField("httpMethod", v)} />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[10px] uppercase tracking-wider workflow-muted">Auth Type</label>
+                    <CustomSelect options={authTypeOptions} value={form().authType} onChange={v => updateField("authType", v)} />
+                  </div>
                 </div>
-                <div class="flex flex-col gap-1">
-                  <label class="text-[10px] uppercase tracking-wider workflow-muted">Webhook / Execution URL</label>
-                  <input placeholder="https://..." value={form().executionEndpoint} onInput={e => updateField("executionEndpoint", e.currentTarget.value)} class={inputCls} />
-                </div>
-                <div class="flex flex-col gap-1">
-                  <label class="text-[10px] uppercase tracking-wider workflow-muted">HTTP Method</label>
-                  <CustomSelect options={httpMethodOptions} value={form().httpMethod} onChange={v => updateField("httpMethod", v)} />
-                </div>
-                <div class="flex flex-col gap-1">
-                  <label class="text-[10px] uppercase tracking-wider workflow-muted">Auth Type</label>
-                  <CustomSelect options={authTypeOptions} value={form().authType} onChange={v => updateField("authType", v)} />
-                </div>
-              </div>
 
-              {/* Row 3: Dynamic Auth Credential Fields */}
-              <Show when={form().authType !== "none"}>
-                <div class="workflow-surface rounded-lg p-3 mb-3 block-enter">
-                  <p class="text-[10px] uppercase tracking-wider workflow-muted mb-2">Authentication Details</p>
+                {/* Row 3: Dynamic Auth Credential Fields */}
+                <Show when={form().authType !== "none"}>
+                  <div class="workflow-surface rounded-lg p-3 mb-3 block-enter">
+                    <p class="text-[10px] uppercase tracking-wider workflow-muted mb-2">Authentication Details</p>
 
-                  {/* Bearer */}
-                  <Show when={form().authType === "bearer"}>
-                    <div class="flex flex-col gap-1">
-                      <label class="text-[10px] workflow-muted">Bearer Token</label>
-                      <input type="password" placeholder="Enter bearer token" value={form().bearerToken} onInput={e => updateField("bearerToken", e.currentTarget.value)} class={inputCls} />
-                    </div>
-                  </Show>
-
-                  {/* API Key */}
-                  <Show when={form().authType === "api_key"}>
-                    <div class="grid grid-cols-2 gap-3">
+                    {/* Bearer */}
+                    <Show when={form().authType === "bearer"}>
                       <div class="flex flex-col gap-1">
-                        <label class="text-[10px] workflow-muted">Header Name</label>
-                        <input placeholder="x-api-key" value={form().apiKeyName} onInput={e => updateField("apiKeyName", e.currentTarget.value)} class={inputCls} />
+                        <label class="text-[10px] workflow-muted">Bearer Token</label>
+                        <input type="password" placeholder="Enter bearer token" value={form().bearerToken} onInput={e => updateField("bearerToken", e.currentTarget.value)} class={inputCls} />
                       </div>
+                    </Show>
+
+                    {/* API Key */}
+                    <Show when={form().authType === "api_key"}>
+                      <div class="grid grid-cols-2 gap-3">
+                        <div class="flex flex-col gap-1">
+                          <label class="text-[10px] workflow-muted">Header Name</label>
+                          <input placeholder="x-api-key" value={form().apiKeyName} onInput={e => updateField("apiKeyName", e.currentTarget.value)} class={inputCls} />
+                        </div>
+                        <div class="flex flex-col gap-1">
+                          <label class="text-[10px] workflow-muted">API Key Value</label>
+                          <input type="password" placeholder="Enter API key" value={form().apiKeyValue} onInput={e => updateField("apiKeyValue", e.currentTarget.value)} class={inputCls} />
+                        </div>
+                      </div>
+                    </Show>
+
+                    {/* Header Secret */}
+                    <Show when={form().authType === "header_secret"}>
+                      <div class="grid grid-cols-2 gap-3">
+                        <div class="flex flex-col gap-1">
+                          <label class="text-[10px] workflow-muted">Header Name</label>
+                          <input placeholder="x-secret" value={form().headerName} onInput={e => updateField("headerName", e.currentTarget.value)} class={inputCls} />
+                        </div>
+                        <div class="flex flex-col gap-1">
+                          <label class="text-[10px] workflow-muted">Secret Value</label>
+                          <input type="password" placeholder="Enter secret" value={form().headerSecret} onInput={e => updateField("headerSecret", e.currentTarget.value)} class={inputCls} />
+                        </div>
+                      </div>
+                    </Show>
+
+                    {/* Custom JSON */}
+                    <Show when={form().authType === "custom"}>
                       <div class="flex flex-col gap-1">
-                        <label class="text-[10px] workflow-muted">API Key Value</label>
-                        <input type="password" placeholder="Enter API key" value={form().apiKeyValue} onInput={e => updateField("apiKeyValue", e.currentTarget.value)} class={inputCls} />
+                        <label class="text-[10px] workflow-muted">Auth Config (JSON)</label>
+                        <textarea rows={3} placeholder='{"header": "value"}' value={form().customAuthJson} onInput={e => updateField("customAuthJson", e.currentTarget.value)} class={inputCls + " font-mono text-xs resize-y"} />
                       </div>
-                    </div>
-                  </Show>
+                    </Show>
+                  </div>
+                </Show>
 
-                  {/* Header Secret */}
-                  <Show when={form().authType === "header_secret"}>
-                    <div class="grid grid-cols-2 gap-3">
-                      <div class="flex flex-col gap-1">
-                        <label class="text-[10px] workflow-muted">Header Name</label>
-                        <input placeholder="x-secret" value={form().headerName} onInput={e => updateField("headerName", e.currentTarget.value)} class={inputCls} />
-                      </div>
-                      <div class="flex flex-col gap-1">
-                        <label class="text-[10px] workflow-muted">Secret Value</label>
-                        <input type="password" placeholder="Enter secret" value={form().headerSecret} onInput={e => updateField("headerSecret", e.currentTarget.value)} class={inputCls} />
-                      </div>
-                    </div>
-                  </Show>
+                {/* Row 4: Description, Tags */}
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                  <div class="md:col-span-2 flex flex-col gap-1">
+                    <label class="text-[10px] uppercase tracking-wider workflow-muted">Description</label>
+                    <textarea rows={3} placeholder="What does this workflow do? Provide complete info for the AI." value={form().description} onInput={e => updateField("description", e.currentTarget.value)} class={inputCls + " resize-y"} />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[10px] uppercase tracking-wider workflow-muted">Tags</label>
+                    <input placeholder="productivity, email" value={form().tags} onInput={e => updateField("tags", e.currentTarget.value)} class={inputCls} />
+                  </div>
+                </div>
 
-                  {/* Custom JSON */}
-                  <Show when={form().authType === "custom"}>
-                    <div class="flex flex-col gap-1">
-                      <label class="text-[10px] workflow-muted">Auth Config (JSON)</label>
-                      <textarea rows={3} placeholder='{"header": "value"}' value={form().customAuthJson} onInput={e => updateField("customAuthJson", e.currentTarget.value)} class={inputCls + " font-mono text-xs resize-y"} />
-                    </div>
-                  </Show>
+                {/* Row 5: Input Schema, Output Schema */}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[10px] uppercase tracking-wider workflow-muted">Input Schema (JSON)</label>
+                    <textarea rows={3} placeholder='{}' value={form().inputSchemaJson} onInput={e => updateField("inputSchemaJson", e.currentTarget.value)} class={inputCls + " font-mono text-xs resize-y"} />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[10px] uppercase tracking-wider workflow-muted">Output Schema (JSON)</label>
+                    <textarea rows={3} placeholder='{}' value={form().outputSchemaJson} onInput={e => updateField("outputSchemaJson", e.currentTarget.value)} class={inputCls + " font-mono text-xs resize-y"} />
+                  </div>
                 </div>
-              </Show>
 
-              {/* Row 4: Description, Tags */}
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-                <div class="md:col-span-2 flex flex-col gap-1">
-                  <label class="text-[10px] uppercase tracking-wider workflow-muted">Description</label>
-                  <textarea rows={3} placeholder="What does this workflow do? Provide complete info for the AI." value={form().description} onInput={e => updateField("description", e.currentTarget.value)} class={inputCls + " resize-y"} />
+                {/* Row 6: Toggles + Create */}
+                <div class="flex items-center justify-between">
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setForm(prev => ({ ...prev, enabled: !prev.enabled }))}
+                      class={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
+                        form().enabled
+                          ? "bg-neutral-200 text-neutral-900 border-neutral-200"
+                          : "bg-neutral-900/60 text-neutral-300 border-neutral-700/70 hover:border-neutral-500"
+                      }`}
+                    >
+                      Enabled
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm(prev => ({ ...prev, requiresApproval: !prev.requiresApproval }))}
+                      class={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
+                        form().requiresApproval
+                          ? "bg-neutral-200 text-neutral-900 border-neutral-200"
+                          : "bg-neutral-900/60 text-neutral-300 border-neutral-700/70 hover:border-neutral-500"
+                      }`}
+                    >
+                      Requires Approval
+                    </button>
+                  </div>
+                  <Button variant="primary" size="sm" disabled={creating()} onClick={handleCreate}>
+                    {creating() ? "Creating…" : "Create"}
+                  </Button>
                 </div>
-                <div class="flex flex-col gap-1">
-                  <label class="text-[10px] uppercase tracking-wider workflow-muted">Tags</label>
-                  <input placeholder="productivity, email" value={form().tags} onInput={e => updateField("tags", e.currentTarget.value)} class={inputCls} />
-                </div>
-              </div>
-
-              {/* Row 5: Input Schema, Output Schema */}
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                <div class="flex flex-col gap-1">
-                  <label class="text-[10px] uppercase tracking-wider workflow-muted">Input Schema (JSON)</label>
-                  <textarea rows={3} placeholder='{}' value={form().inputSchemaJson} onInput={e => updateField("inputSchemaJson", e.currentTarget.value)} class={inputCls + " font-mono text-xs resize-y"} />
-                </div>
-                <div class="flex flex-col gap-1">
-                  <label class="text-[10px] uppercase tracking-wider workflow-muted">Output Schema (JSON)</label>
-                  <textarea rows={3} placeholder='{}' value={form().outputSchemaJson} onInput={e => updateField("outputSchemaJson", e.currentTarget.value)} class={inputCls + " font-mono text-xs resize-y"} />
-                </div>
-              </div>
-
-              {/* Row 6: Toggles + Create */}
-              <div class="flex items-center justify-between">
-                <div class="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setForm(prev => ({ ...prev, enabled: !prev.enabled }))}
-                    class={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
-                      form().enabled
-                        ? "bg-neutral-200 text-neutral-900 border-neutral-200"
-                        : "bg-neutral-900/60 text-neutral-300 border-neutral-700/70 hover:border-neutral-500"
-                    }`}
-                  >
-                    Enabled
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setForm(prev => ({ ...prev, requiresApproval: !prev.requiresApproval }))}
-                    class={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
-                      form().requiresApproval
-                        ? "bg-neutral-200 text-neutral-900 border-neutral-200"
-                        : "bg-neutral-900/60 text-neutral-300 border-neutral-700/70 hover:border-neutral-500"
-                    }`}
-                  >
-                    Requires Approval
-                  </button>
-                </div>
-                <Button variant="primary" size="sm" disabled={creating()} onClick={handleCreate}>
-                  {creating() ? "Creating…" : "Create"}
-                </Button>
               </div>
             </div>
           </div>
@@ -328,9 +331,9 @@ export default function Workflows() {
 
         {/* Toolbar */}
         <div class="px-6 py-3 border-b border-slate-700/25 bg-black/10 shrink-0">
-          <div class="workflow-shell flex flex-wrap items-center gap-3">
+          <div class="workflow-shell rounded-xl border border-neutral-800/70 bg-neutral-950/55 px-3 py-2 flex flex-wrap items-center gap-2.5">
             {/* Search */}
-            <div class="flex-1 min-w-[200px] max-w-sm relative">
+            <div class="flex-1 min-w-[220px] max-w-sm relative">
               <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 workflow-dim" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               <input
                 type="text"
@@ -342,40 +345,50 @@ export default function Workflows() {
             </div>
 
             {/* Provider filter */}
-            <select
-              value={providerFilter()}
-              onChange={(e) => setProviderFilter(e.currentTarget.value)}
-              class="workflow-input px-3 py-1.5 rounded-lg border text-xs focus:outline-none focus:border-neutral-500/90 cursor-pointer appearance-none"
-            >
-              {providers.map(p => (
-                <option value={p.value}>{p.label}</option>
-              ))}
-            </select>
-
-            {/* Visibility filter */}
-            <select
-              value={visibilityFilter()}
-              onChange={(e) => setVisibilityFilter(e.currentTarget.value)}
-              class="workflow-input px-3 py-1.5 rounded-lg border text-xs focus:outline-none focus:border-neutral-500/90 cursor-pointer appearance-none"
-            >
-              <option value="">All Visibility</option>
-              <option value="public">Public</option>
-              <option value="private">Private</option>
-            </select>
-
-            {/* Show archived toggle */}
-            <label class="flex items-center gap-1.5 text-[11px] workflow-muted cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={showArchived()}
-                onChange={() => setShowArchived(!showArchived())}
-                class="rounded border-neutral-700 bg-neutral-900 text-neutral-400 focus:ring-neutral-500/30 w-3.5 h-3.5"
+            <div class="flex items-center gap-2 rounded-xl border border-neutral-800/80 bg-neutral-900/55 px-2 py-1">
+              <CustomSelect
+                options={providerFilterOptions}
+                value={providerFilter()}
+                onChange={setProviderFilter}
+                class="min-w-[152px]"
+                triggerClass="py-1.5 rounded-lg text-xs bg-neutral-900/75 border-neutral-700/80 hover:border-neutral-600/90"
+                menuClass="rounded-xl border-neutral-700/80"
               />
-              Archived
-            </label>
+
+              <CustomSelect
+                options={visibilityFilterOptions}
+                value={visibilityFilter()}
+                onChange={setVisibilityFilter}
+                class="min-w-[152px]"
+                triggerClass="py-1.5 rounded-lg text-xs bg-neutral-900/75 border-neutral-700/80 hover:border-neutral-600/90"
+                menuClass="rounded-xl border-neutral-700/80"
+              />
+
+              <button
+                type="button"
+                aria-pressed={showArchived()}
+                onClick={() => setShowArchived(!showArchived())}
+                class={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all duration-200 ${
+                  showArchived()
+                    ? "border-indigo-500/35 bg-indigo-500/12 text-indigo-200"
+                    : "border-neutral-700/80 bg-neutral-900/70 text-neutral-400 hover:text-neutral-200 hover:border-neutral-600/85"
+                }`}
+              >
+                <span class={`w-3.5 h-3.5 rounded-[4px] border flex items-center justify-center ${
+                  showArchived() ? "border-indigo-400/60 bg-indigo-500/20" : "border-neutral-600/80 bg-neutral-900/90"
+                }`}>
+                  <Show when={showArchived()}>
+                    <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </Show>
+                </span>
+                Archived
+              </button>
+            </div>
 
             {/* Stats pill */}
-            <span class="text-[10px] workflow-dim ml-auto">
+            <span class="text-[10px] workflow-dim ml-auto px-2.5 py-1 rounded-md border border-neutral-800/70 bg-neutral-900/50">
               {stats().total} workflow{stats().total !== 1 ? "s" : ""}
               {stats().enabled !== stats().total && ` (${stats().enabled} active)`}
             </span>
@@ -425,43 +438,47 @@ export default function Workflows() {
           <Show when={!workflows.loading}>
             {/* Empty state */}
             <Show when={(workflows() || []).length === 0}>
-              <div class="workflow-shell text-center py-16">
-                <div class="text-3xl mb-3">📋</div>
-                <p class="text-slate-300 text-sm">No workflows match your filters.</p>
-                <p class="workflow-dim text-xs mt-1">
-                  Try adjusting your search or run <code class="text-blue-400">bun run db:seed</code> to add sample workflows.
-                </p>
+              <div class="workflow-shell py-14">
+                <div class="max-w-xl mx-auto rounded-2xl border border-neutral-800/70 bg-neutral-950/55 text-center px-6 py-10">
+                  <div class="mb-4 w-12 h-12 mx-auto rounded-xl border border-neutral-700/60 bg-neutral-900/60 text-neutral-300 flex items-center justify-center">
+                    <WorkflowIcon class="w-5 h-5" />
+                  </div>
+                  <p class="text-slate-200 text-sm font-medium">No workflows match your filters.</p>
+                  <p class="workflow-dim text-xs mt-1">Try another provider, visibility, or search term.</p>
+                </div>
               </div>
             </Show>
 
             {/* Grid / List */}
-            <div class={`workflow-shell ${
-              viewMode() === "grid"
-                ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
-                : "flex flex-col gap-2"
-            }`}>
-              <For each={workflows() || []}>
-                {(wf: any) => (
-                  <WorkflowListCard
-                    id={wf.id}
-                    name={wf.name}
-                    workflowKey={wf.key}
-                    provider={wf.provider}
-                    visibility={wf.visibility}
-                    enabled={wf.enabled}
-                    archived={wf.archived}
-                    description={wf.description}
-                    tags={wf.tags}
-                    lastRunStatus={wf.lastRunStatus}
-                    lastRunAt={wf.lastRunAt}
-                    onTrigger={handleTrigger}
-                    onViewDetails={(id) => navigate(`/workflows/${id}`)}
-                    isTriggering={triggering() === wf.id}
-                    layout={viewMode()}
-                  />
-                )}
-              </For>
-            </div>
+            <Show when={(workflows() || []).length > 0}>
+              <div class={`workflow-shell ${
+                viewMode() === "grid"
+                  ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
+                  : "flex flex-col gap-2"
+              }`}>
+                <For each={workflows() || []}>
+                  {(wf: any) => (
+                    <WorkflowListCard
+                      id={wf.id}
+                      name={wf.name}
+                      workflowKey={wf.key}
+                      provider={wf.provider}
+                      visibility={wf.visibility}
+                      enabled={wf.enabled}
+                      archived={wf.archived}
+                      description={wf.description}
+                      tags={wf.tags}
+                      lastRunStatus={wf.lastRunStatus}
+                      lastRunAt={wf.lastRunAt}
+                      onTrigger={handleTrigger}
+                      onViewDetails={(id) => navigate(`/workflows/${id}`)}
+                      isTriggering={triggering() === wf.id}
+                      layout={viewMode()}
+                    />
+                  )}
+                </For>
+              </div>
+            </Show>
           </Show>
         </div>
       </main>

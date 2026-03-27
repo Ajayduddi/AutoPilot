@@ -5,11 +5,47 @@ import { n8nCallbackSchema, unifiedCallbackSchema } from '../schemas/webhook.sch
 import { WorkflowService } from '../services/workflow.service';
 import { ChatService } from '../services/chat.service';
 import { NotificationService } from '../services/notification.service';
+import { WorkflowSummaryService } from '../services/workflow-summary.service';
+import { rateLimit } from '../middleware/rate-limit.middleware';
 
 const router = Router();
+const webhookRateLimit = rateLimit({ keyPrefix: 'webhook-callbacks', limit: 120, windowMs: 60_000 });
+
+async function notifyAutonomousWorkflowResult(params: {
+  userId: string;
+  runId: string;
+  workflowKey: string;
+  provider: string;
+  traceId: string;
+  status: 'completed' | 'failed';
+  result?: unknown;
+  raw?: unknown;
+  error?: unknown;
+}) {
+  const summaryData = await WorkflowSummaryService.summarizeCallback({
+    workflowKey: params.workflowKey,
+    provider: params.provider,
+    status: params.status,
+    runId: params.runId,
+    traceId: params.traceId,
+    result: params.result,
+    raw: params.raw,
+    error: params.error,
+  });
+
+  await NotificationService.notify(params.userId, {
+    type: params.status === 'completed' ? 'workflow_event' : 'system',
+    title: params.status === 'completed'
+      ? `Workflow completed: ${params.workflowKey}`
+      : `Workflow failed: ${params.workflowKey}`,
+    message: summaryData.summary,
+    runId: params.runId,
+    payload: summaryData,
+  });
+}
 
 // ── n8n callback endpoint (backward-compatible) ─────────────────────────────
-router.post('/n8n', requireWebhookSecret, validate(n8nCallbackSchema), async (req, res, next) => {
+router.post('/n8n', webhookRateLimit, requireWebhookSecret, validate(n8nCallbackSchema), async (req, res, next) => {
   try {
     const payload = req.body;
 
@@ -27,12 +63,16 @@ router.post('/n8n', requireWebhookSecret, validate(n8nCallbackSchema), async (re
 
       if (run.threadId) {
         await ChatService.addMessage(run.threadId, 'assistant', `Workflow execution finished successfully.`);
-      } else {
-        await NotificationService.notify(run.userId, {
-          type: 'workflow_event',
-          title: 'Workflow Completed',
-          message: 'Your automation executed successfully.',
+      } else if (NotificationService.shouldNotifyWorkflowRun({ triggerSource: run.triggerSource, threadId: run.threadId })) {
+        await notifyAutonomousWorkflowResult({
+          userId: run.userId,
           runId: run.id,
+          workflowKey: run.workflowKey,
+          provider: run.provider,
+          traceId: run.traceId,
+          status: 'completed',
+          result: payload.result,
+          raw: payload.result,
         });
       }
     } else if (payload.type === 'error') {
@@ -43,17 +83,20 @@ router.post('/n8n', requireWebhookSecret, validate(n8nCallbackSchema), async (re
 
       if (run.threadId) {
         await ChatService.addMessage(run.threadId, 'assistant', `Workflow failed: ${payload.error}`);
-      } else {
-        await NotificationService.notify(run.userId, {
-          type: 'system',
-          title: 'Workflow Error',
-          message: `An automation failed to execute: ${payload.error}`,
+      } else if (NotificationService.shouldNotifyWorkflowRun({ triggerSource: run.triggerSource, threadId: run.threadId })) {
+        await notifyAutonomousWorkflowResult({
+          userId: run.userId,
           runId: run.id,
+          workflowKey: run.workflowKey,
+          provider: run.provider,
+          traceId: run.traceId,
+          status: 'failed',
+          error: payload.error,
         });
       }
     }
 
-    res.json({ status: 'ok', receipt: 'processed' });
+    res.status(200).json({ status: 'ok', receipt: 'processed' });
   } catch (err) {
     next(err);
   }
@@ -61,12 +104,28 @@ router.post('/n8n', requireWebhookSecret, validate(n8nCallbackSchema), async (re
 
 // ── Unified provider callback endpoint ──────────────────────────────────────
 // Accepts callbacks from any provider using the standard callback shape
-router.post('/callback', requireWebhookSecret, validate(unifiedCallbackSchema), async (req, res, next) => {
+router.post('/callback', webhookRateLimit, requireWebhookSecret, validate(unifiedCallbackSchema), async (req, res, next) => {
   try {
     const payload = req.body;
+    const incomingTraceId = typeof payload.traceId === 'string' ? payload.traceId.trim() : '';
 
-    // Look up run by trace_id (providers send this back)
-    const run = await WorkflowService.getRunByTraceId(payload.traceId);
+    // Preferred path: look up existing run by app-generated trace_id.
+    // Fallback path: if trace_id is missing, create an external autonomous run.
+    let run = incomingTraceId
+      ? await WorkflowService.getRunByTraceId(incomingTraceId)
+      : null;
+
+    if (!run && !incomingTraceId) {
+      run = await WorkflowService.createExternalCallbackRun({
+        workflowKey: payload.workflowKey,
+        provider: payload.provider,
+        triggerSource: 'system',
+      });
+      if (!run) {
+        return res.status(404).json({ error: 'Workflow not found for workflowKey' });
+      }
+    }
+
     if (!run) {
       return res.status(404).json({ error: 'No run found for trace_id' });
     }
@@ -92,19 +151,35 @@ router.post('/callback', requireWebhookSecret, validate(unifiedCallbackSchema), 
       await ChatService.addMessage(run.threadId, 'assistant', msg);
     } else {
       const isTerminal = payload.status === 'completed' || payload.status === 'failed';
-      if (isTerminal) {
-        await NotificationService.notify(run.userId, {
-          type: payload.status === 'completed' ? 'workflow_event' : 'system',
-          title: payload.status === 'completed' ? 'Workflow Completed' : 'Workflow Failed',
-          message: payload.status === 'completed'
-            ? 'Your automation executed successfully.'
-            : `An automation failed: ${JSON.stringify(payload.error)}`,
+      const shouldNotify = NotificationService.shouldNotifyWorkflowRun({
+        triggerSource: run.triggerSource,
+        threadId: run.threadId,
+      });
+      if (isTerminal && shouldNotify) {
+        const terminalStatus: 'completed' | 'failed' = payload.status === 'failed' ? 'failed' : 'completed';
+        await notifyAutonomousWorkflowResult({
+          userId: run.userId,
           runId: run.id,
+          workflowKey: run.workflowKey,
+          provider: run.provider,
+          traceId: run.traceId,
+          status: terminalStatus,
+          result: payload.result,
+          raw: payload.raw,
+          error: payload.error,
         });
       }
     }
 
-    res.json({ status: 'ok', receipt: 'processed' });
+    res.status(200).json({
+      status: 'ok',
+      receipt: 'processed',
+      data: {
+        runId: run.id,
+        traceId: run.traceId,
+        createdFromCallback: !incomingTraceId,
+      },
+    });
   } catch (err) {
     next(err);
   }

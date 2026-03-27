@@ -23,6 +23,28 @@ All requests and responses include the header `x-trace-id` for request lifecycle
 
 ---
 
+## Auth
+
+| Method | Path | Body | Description |
+|---|---|---|---|
+| GET | `/api/auth/state` | — | Returns app auth mode: onboarding/login/authenticated |
+| POST | `/api/auth/onboarding/register` | `{ email, name?, password }` | Create first owner account (single-user only) |
+| POST | `/api/auth/login` | `{ email, password }` | Login with email/password |
+| POST | `/api/auth/logout` | — | Revoke current session |
+| GET | `/api/auth/me` | — | Get current authenticated user |
+| GET | `/api/auth/account` | — | Get account profile/credential capabilities |
+| PATCH | `/api/auth/account/profile` | `{ name }` | Update username/profile name |
+| PATCH | `/api/auth/account/email` | `{ email, currentPassword }` | Update email (requires current password) |
+| PATCH | `/api/auth/account/password` | `{ currentPassword, newPassword }` | Update password (password accounts only) |
+| GET | `/api/auth/google/start` | — | Start Google OAuth |
+| GET | `/api/auth/google/callback` | query | Google OAuth callback |
+
+Notes:
+- Email change requires `currentPassword`.
+- Google-only accounts return `hasPassword: false`; password update is unavailable for those users.
+
+---
+
 ## Chat
 
 | Method | Path | Body | Description |
@@ -68,10 +90,40 @@ All requests and responses include the header `x-trace-id` for request lifecycle
 
 ---
 
-## Webhooks (n8n callbacks)
+## Webhooks (provider callbacks)
 
 | Method | Path | Header Required | Body | Description |
 |---|---|---|---|---|
-| POST | `/api/webhooks/n8n` | `x-n8n-secret` | `{ type, runId, result?, error? }` | n8n posts results back |
+| POST | `/api/webhooks/callback` | `x-webhook-secret` | `{ traceId, workflowKey, provider, status, result?, raw?, error?, meta? }` | Unified callback for all providers |
+| POST | `/api/webhooks/n8n` | `x-webhook-secret` (or legacy `x-n8n-secret`) | `{ type, runId, result?, error? }` | Backward-compatible n8n callback |
 
 `type` enum: `completed` \| `error`
+
+`status` enum: `running` \| `completed` \| `failed` \| `waiting_approval`
+
+### Example: Unified Callback
+```bash
+curl -X POST "http://localhost:3000/api/webhooks/callback" \
+  -H "Content-Type: application/json" \
+  -H "x-webhook-secret: whsec_your_generated_key_here" \
+  -d '{
+    "traceId": "trace_123",
+    "workflowKey": "wf_portfolio",
+    "provider": "n8n",
+    "status": "completed",
+    "result": { "summary": "Workflow completed" },
+    "raw": { "providerRunId": "abc123" }
+  }'
+```
+
+### Example: Legacy n8n Callback
+```bash
+curl -X POST "http://localhost:3000/api/webhooks/n8n" \
+  -H "Content-Type: application/json" \
+  -H "x-webhook-secret: whsec_your_generated_key_here" \
+  -d '{
+    "type": "completed",
+    "runId": "run_123",
+    "result": { "summary": "Workflow completed" }
+  }'
+```
