@@ -1,6 +1,7 @@
 import express, { type Express } from "express";
 import type { Server } from "http";
 import { traceMiddleware } from "../../../src/middleware/trace.middleware";
+import { errorMiddleware } from "../../../src/middleware/error.middleware";
 import { UserRepo } from "../../../src/repositories/user.repo";
 import { AuthService } from "../../../src/services/auth.service";
 import { ChatRepo } from "../../../src/repositories/chat.repo";
@@ -55,6 +56,9 @@ export function restoreMocks() {
 }
 
 export async function withServer(app: Express): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+  // Ensure tests use the same centralized API error shape as production routes.
+  app.use(errorMiddleware);
+
   const requestedPort = 0;
   const requestedHost = "127.0.0.1";
 
@@ -98,6 +102,6 @@ export function buildApp(opts?: { injectAuth?: boolean }) {
       next();
     });
   }
-  
+
   return app;
 }

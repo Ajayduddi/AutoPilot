@@ -211,13 +211,13 @@ router.post('/:id/trigger', validate(triggerWorkflowSchema), async (req, res, ne
     if (!workflow.enabled) {
       return res.status(422).json({
         status: 'error',
-        error: { code: 'WORKFLOW_DISABLED', message: 'Cannot trigger a disabled workflow' },
+        error: { code: 'INVALID_STATE', message: 'Cannot trigger a disabled workflow' },
       });
     }
     if (workflow.archived) {
       return res.status(422).json({
         status: 'error',
-        error: { code: 'WORKFLOW_ARCHIVED', message: 'Cannot trigger an archived workflow' },
+        error: { code: 'INVALID_STATE', message: 'Cannot trigger an archived workflow' },
       });
     }
     if (!workflow.executionEndpoint) {

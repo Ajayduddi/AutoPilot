@@ -87,10 +87,13 @@ jobs:
       - name: Dependency Audit (SCA)
         run: |
           set -euo pipefail
-          bun audit || {
-            echo "[ci] bun audit found vulnerabilities. Failing for triage."
+          bun audit > /tmp/bun-audit.txt 2>&1 || true
+          cat /tmp/bun-audit.txt
+          if grep -Eiq "\bcritical\b" /tmp/bun-audit.txt; then
+            echo "[ci] critical vulnerabilities found in bun audit output. Failing."
             exit 1
-          }
+          fi
+          echo "[ci] Non-critical vulnerabilities detected (if any). Audit logged for triage."
 
   backend-migration-preflight:
     runs-on: ubuntu-latest

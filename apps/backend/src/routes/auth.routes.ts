@@ -98,14 +98,27 @@ router.post(
   try {
         const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
         const password = typeof req.body?.password === 'string' ? req.body.password : '';
-    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+    if (!email || !password) {
+      return res.status(400).json({
+        status: 'error',
+        error: { code: 'VALIDATION_ERROR', message: 'Email and password are required' },
+      });
+    }
 
         const user = await UserRepo.getByEmail(email);
     if (!user || user.id === UserRepo.LEGACY_USER_ID) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({
+        status: 'error',
+        error: { code: 'UNAUTHORIZED', message: 'Invalid credentials' },
+      });
     }
         const valid = await AuthService.verifyPassword(password, user.passwordHash);
-    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!valid) {
+      return res.status(401).json({
+        status: 'error',
+        error: { code: 'UNAUTHORIZED', message: 'Invalid credentials' },
+      });
+    }
 
         const token = await AuthService.createSessionForUser({
       userId: user.id,
