@@ -22,7 +22,7 @@ interface QuestionMcqViewProps {
  * @param block - MCQ block payload.
  * @returns `true` when prompt/options look like workflow proceed confirmation.
  */
-function isWorkflowProceedPrompt(block: QuestionMcqBlock): boolean {
+export function isWorkflowProceedPrompt(block: QuestionMcqBlock): boolean {
   const prompt = String(block.prompt || "").toLowerCase();
   const options = Array.isArray(block.options) ? block.options : [];
   const combined = options

@@ -3,83 +3,23 @@
  *
  * Database access utilities and persistence workflows for backend entities.
  */
-import { and, eq, inArray, isNull, lt, sql, asc } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, asc } from 'drizzle-orm';
 import { db } from '../db';
 import { chatThreads, chatMessages, workflowRuns, chatAttachments, chatAttachmentChunks } from '../db/schema';
 import { generateThreadId } from '../util/thread-id';
 import { randomUUID } from 'crypto';
-function isMissingAttachmentTableError(err: unknown): boolean {
-    const e = err as any;
-    const code = e?.code || e?.cause?.code;
-    const message = String(e?.message || e?.cause?.message || '');
-  if (code === '42P01') return true; // postgres: undefined_table
-  return /chat_attachments|chat_attachment_chunks/i.test(message) && /(does not exist|undefined table)/i.test(message);
-}
-let attachmentSchemaEnsured = false;let attachmentSchemaEnsuring: Promise<void> | null = null;
 
 /**
  * ChatRepo exported constant.
  */
 export const ChatRepo = {
-    async ensureAttachmentSchema() {
-    if (attachmentSchemaEnsured) return;
-    if (!attachmentSchemaEnsuring) {
-      attachmentSchemaEnsuring = (async () => {
-        await db.execute(sql.raw(`
-          CREATE TABLE IF NOT EXISTS "chat_attachments" (
-            "id" text PRIMARY KEY NOT NULL,
-            "user_id" text NOT NULL REFERENCES "users"("id"),
-            "thread_id" text REFERENCES "chat_threads"("id"),
-            "message_id" text REFERENCES "chat_messages"("id"),
-            "filename" text NOT NULL,
-            "mime_type" text NOT NULL,
-            "size_bytes" integer NOT NULL,
-            "storage_path" text NOT NULL,
-            "checksum" text NOT NULL,
-            "processing_status" text NOT NULL DEFAULT 'uploaded',
-            "extracted_text" text,
-            "structured_metadata" jsonb,
-            "preview_data" jsonb,
-            "error" text,
-            "created_at" timestamp NOT NULL DEFAULT now(),
-            "updated_at" timestamp NOT NULL DEFAULT now()
-          );
-        `));
-        await db.execute(sql.raw(`
-          ALTER TABLE "chat_attachments"
-            ADD COLUMN IF NOT EXISTS "extracted_text" text,
-            ADD COLUMN IF NOT EXISTS "structured_metadata" jsonb,
-            ADD COLUMN IF NOT EXISTS "preview_data" jsonb,
-            ADD COLUMN IF NOT EXISTS "error" text,
-            ADD COLUMN IF NOT EXISTS "created_at" timestamp NOT NULL DEFAULT now(),
-            ADD COLUMN IF NOT EXISTS "updated_at" timestamp NOT NULL DEFAULT now();
-        `));
-        await db.execute(sql.raw(`CREATE INDEX IF NOT EXISTS "idx_chat_attachments_user" ON "chat_attachments" ("user_id");`));
-        await db.execute(sql.raw(`CREATE INDEX IF NOT EXISTS "idx_chat_attachments_thread" ON "chat_attachments" ("thread_id");`));
-        await db.execute(sql.raw(`CREATE INDEX IF NOT EXISTS "idx_chat_attachments_message" ON "chat_attachments" ("message_id");`));
-        await db.execute(sql.raw(`CREATE INDEX IF NOT EXISTS "idx_chat_attachments_checksum" ON "chat_attachments" ("checksum");`));
-
-        await db.execute(sql.raw(`
-          CREATE TABLE IF NOT EXISTS "chat_attachment_chunks" (
-            "id" text PRIMARY KEY NOT NULL,
-            "attachment_id" text NOT NULL REFERENCES "chat_attachments"("id"),
-            "user_id" text NOT NULL REFERENCES "users"("id"),
-            "chunk_index" integer NOT NULL,
-            "content" text NOT NULL,
-            "token_count" integer,
-            "metadata" jsonb,
-            "created_at" timestamp NOT NULL DEFAULT now()
-          );
-        `));
-        await db.execute(sql.raw(`CREATE INDEX IF NOT EXISTS "idx_chat_attachment_chunks_attachment" ON "chat_attachment_chunks" ("attachment_id");`));
-        await db.execute(sql.raw(`CREATE INDEX IF NOT EXISTS "idx_chat_attachment_chunks_user" ON "chat_attachment_chunks" ("user_id");`));
-        attachmentSchemaEnsured = true;
-      })()
-        .finally(() => {
-          attachmentSchemaEnsuring = null;
-        });
-    }
-    await attachmentSchemaEnsuring;
+  async assertAttachmentSchemaReady() {
+    await db.query.chatAttachments.findFirst({
+      columns: { id: true },
+    });
+    await db.query.chatAttachmentChunks.findFirst({
+      columns: { id: true },
+    });
   },
 
     async ensureThread(threadId: string, userId: string, title = "New Thread") {
@@ -189,7 +129,6 @@ export const ChatRepo = {
     previewData?: Record<string, unknown> | null;
     error?: string | null;
   }) {
-    await this.ensureAttachmentSchema();
         const id = `att_${randomUUID()}`;
     const [row] = await db.insert(chatAttachments).values({
       id,
@@ -219,7 +158,6 @@ export const ChatRepo = {
         previewData: Record<string, unknown> | null;
         error: string | null;
   }>) {
-    await this.ensureAttachmentSchema();
     const [row] = await db.update(chatAttachments)
       .set({ ...input, updatedAt: new Date() })
       .where(eq(chatAttachments.id, attachmentId))
@@ -228,14 +166,12 @@ export const ChatRepo = {
   },
 
     async getAttachmentById(attachmentId: string) {
-    await this.ensureAttachmentSchema();
     return db.query.chatAttachments.findFirst({
       where: eq(chatAttachments.id, attachmentId),
     });
   },
 
     async getAttachmentsByIds(userId: string, attachmentIds: string[]) {
-    await this.ensureAttachmentSchema();
     if (!attachmentIds.length) return [];
     return db.query.chatAttachments.findMany({
       where: and(eq(chatAttachments.userId, userId), inArray(chatAttachments.id, attachmentIds)),
@@ -244,20 +180,13 @@ export const ChatRepo = {
   },
 
     async listAttachmentsByThread(threadId: string) {
-    await this.ensureAttachmentSchema();
-    try {
-      return await db.query.chatAttachments.findMany({
-        where: eq(chatAttachments.threadId, threadId),
-                orderBy: (a, { asc }) => [asc(a.createdAt)],
-      });
-    } catch (err) {
-      if (isMissingAttachmentTableError(err)) return [];
-      throw err;
-    }
+    return await db.query.chatAttachments.findMany({
+      where: eq(chatAttachments.threadId, threadId),
+            orderBy: (a, { asc }) => [asc(a.createdAt)],
+    });
   },
 
   async linkAttachmentsToMessage(input: { userId: string; threadId: string; messageId: string; attachmentIds: string[] }) {
-    await this.ensureAttachmentSchema();
     if (!input.attachmentIds.length) return;
     await db.update(chatAttachments)
       .set({ messageId: input.messageId, threadId: input.threadId, updatedAt: new Date() })
@@ -269,17 +198,11 @@ export const ChatRepo = {
   },
 
     async getAttachmentsByMessageIds(messageIds: string[]) {
-    await this.ensureAttachmentSchema();
     if (!messageIds.length) return [];
-    try {
-      return await db.query.chatAttachments.findMany({
-        where: inArray(chatAttachments.messageId, messageIds),
-                orderBy: (a, { asc }) => [asc(a.createdAt)],
-      });
-    } catch (err) {
-      if (isMissingAttachmentTableError(err)) return [];
-      throw err;
-    }
+    return await db.query.chatAttachments.findMany({
+      where: inArray(chatAttachments.messageId, messageIds),
+            orderBy: (a, { asc }) => [asc(a.createdAt)],
+    });
   },
 
   async replaceAttachmentChunks(input: {
@@ -291,7 +214,6 @@ export const ChatRepo = {
       metadata?: Record<string, unknown> | null;
     }>;
   }) {
-    await this.ensureAttachmentSchema();
     await db.delete(chatAttachmentChunks).where(eq(chatAttachmentChunks.attachmentId, input.attachmentId));
     if (!input.chunks.length) return;
     await db.insert(chatAttachmentChunks).values(
@@ -308,7 +230,6 @@ export const ChatRepo = {
   },
 
     async getAttachmentChunksByAttachmentIds(attachmentIds: string[], opts?: { limitPerAttachment?: number }) {
-    await this.ensureAttachmentSchema();
     if (!attachmentIds.length) return [];
         const rows = await db.query.chatAttachmentChunks.findMany({
       where: inArray(chatAttachmentChunks.attachmentId, attachmentIds),
@@ -325,7 +246,6 @@ export const ChatRepo = {
   },
 
     async deleteAttachmentById(userId: string, attachmentId: string) {
-    await this.ensureAttachmentSchema();
     await db.delete(chatAttachmentChunks).where(eq(chatAttachmentChunks.attachmentId, attachmentId));
     const [row] = await db.delete(chatAttachments)
       .where(and(eq(chatAttachments.id, attachmentId), eq(chatAttachments.userId, userId)))
@@ -353,24 +273,20 @@ export const ChatRepo = {
     return thread;
   },
 
-    async deleteThread(threadId: string) {
+  async deleteThread(threadId: string) {
     // Null out FK references in workflow_runs, then delete messages, then thread
     await db.update(workflowRuns).set({ threadId: null }).where(eq(workflowRuns.threadId, threadId));
-    try {
             const attachments = await db.query.chatAttachments.findMany({ where: eq(chatAttachments.threadId, threadId), columns: { id: true } });
             const attachmentIds = attachments.map(a => a.id);
-      if (attachmentIds.length > 0) {
-        await db.delete(chatAttachmentChunks).where(inArray(chatAttachmentChunks.attachmentId, attachmentIds));
-        await db.delete(chatAttachments).where(inArray(chatAttachments.id, attachmentIds));
-      }
-    } catch (err) {
-      if (!isMissingAttachmentTableError(err)) throw err;
+    if (attachmentIds.length > 0) {
+      await db.delete(chatAttachmentChunks).where(inArray(chatAttachmentChunks.attachmentId, attachmentIds));
+      await db.delete(chatAttachments).where(inArray(chatAttachments.id, attachmentIds));
     }
     await db.delete(chatMessages).where(eq(chatMessages.threadId, threadId));
     await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
   },
 
-    async deleteAllThreads(userId: string) {
+  async deleteAllThreads(userId: string) {
         const threads = await db.query.chatThreads.findMany({
       where: eq(chatThreads.userId, userId),
       columns: { id: true },
@@ -378,15 +294,11 @@ export const ChatRepo = {
         const threadIds = threads.map(t => t.id);
     if (threadIds.length > 0) {
       await db.update(workflowRuns).set({ threadId: null }).where(inArray(workflowRuns.threadId, threadIds));
-      try {
-                const attachments = await db.query.chatAttachments.findMany({ where: inArray(chatAttachments.threadId, threadIds), columns: { id: true } });
-                const attachmentIds = attachments.map(a => a.id);
-        if (attachmentIds.length > 0) {
-          await db.delete(chatAttachmentChunks).where(inArray(chatAttachmentChunks.attachmentId, attachmentIds));
-          await db.delete(chatAttachments).where(inArray(chatAttachments.id, attachmentIds));
-        }
-      } catch (err) {
-        if (!isMissingAttachmentTableError(err)) throw err;
+              const attachments = await db.query.chatAttachments.findMany({ where: inArray(chatAttachments.threadId, threadIds), columns: { id: true } });
+              const attachmentIds = attachments.map(a => a.id);
+      if (attachmentIds.length > 0) {
+        await db.delete(chatAttachmentChunks).where(inArray(chatAttachmentChunks.attachmentId, attachmentIds));
+        await db.delete(chatAttachments).where(inArray(chatAttachments.id, attachmentIds));
       }
       await db.delete(chatMessages).where(inArray(chatMessages.threadId, threadIds));
     }

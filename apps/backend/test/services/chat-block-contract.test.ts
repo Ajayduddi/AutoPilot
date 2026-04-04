@@ -72,4 +72,62 @@ describe("chat block contract baseline", () => {
     };
     expect(isChatBlocksEnvelope(envelope)).toBe(true);
   });
+
+  it("accepts approval-gated workflow block sequence", () => {
+    const envelope = {
+      blocks: [
+        { type: "summary", items: ["Main agent planned portfolio, approval required before execution."] },
+        {
+          type: "detail_toggle",
+          summary: "Intent: workflow • Selected: portfolio • Next: request approval • Confidence: high",
+          meta: { planKind: "main_agent" },
+          children: [{ type: "markdown", text: "1. Request user approval for sensitive action." }],
+        },
+        {
+          type: "approval_card",
+          approvalId: "apr_1",
+          summary: "Approve workflow execution",
+          details: { workflow: "wf_portfolio", risk: "medium" },
+          status: "pending",
+          approveActionId: "approve:apr_1",
+          rejectActionId: "reject:apr_1",
+        },
+        { type: "source", origin: "ReAct Telemetry", metadata: ["answerMode: approval_pending"] },
+      ],
+    };
+    expect(isChatBlocksEnvelope(envelope)).toBe(true);
+  });
+
+  it("accepts workflow failure block sequence with error result", () => {
+    const envelope = {
+      blocks: [
+        { type: "summary", items: ["Main agent triggered workflow with failure status."] },
+        {
+          type: "workflow_status",
+          workflow: { name: "portfolio", status: "failed", runId: "run_failed_1" },
+        },
+        {
+          type: "error",
+          title: "Execution Failed",
+          items: ["✗ Execution failed", "Error: upstream provider unavailable"],
+          message: "Execution failed",
+        },
+        {
+          type: "source",
+          origin: "N8n Workflow Engine",
+          metadata: ["answerMode: workflow_execution", "Workflow: wf_portfolio", "Run: run_failed_1"],
+        },
+      ],
+    };
+    expect(isChatBlocksEnvelope(envelope)).toBe(true);
+  });
+
+  it("rejects malformed envelope when required block type is missing", () => {
+    const badEnvelope = {
+      blocks: [
+        { items: ["missing type"] },
+      ],
+    } as any;
+    expect(isChatBlocksEnvelope(badEnvelope)).toBe(false);
+  });
 });

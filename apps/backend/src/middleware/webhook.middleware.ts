@@ -70,7 +70,7 @@ export const requireWebhookSecret = async (req: Request, res: Response, next: Ne
         return next();
       }
 
-      return res.status(401).json({ error: 'Unauthorized webhook call' });
+      return res.status(401).json({ error: { message: 'Unauthorized webhook call', code: 'UNAUTHORIZED' } });
     }
 
     let hasActiveDbSecrets = false;
@@ -85,12 +85,15 @@ export const requireWebhookSecret = async (req: Request, res: Response, next: Ne
     }
 
     if (hasActiveDbSecrets || envSecret) {
-      return res.status(401).json({ error: 'Missing webhook secret header' });
+      return res.status(401).json({ error: { message: 'Missing webhook secret header', code: 'UNAUTHORIZED' } });
     }
 
     if (process.env.NODE_ENV === 'production') {
       return res.status(503).json({
-        error: 'Webhook security is not configured. Configure webhook secrets before enabling callbacks in production.',
+        error: {
+          message: 'Webhook security is not configured. Configure webhook secrets before enabling callbacks in production.',
+          code: 'SERVICE_UNAVAILABLE',
+        },
       });
     }
 

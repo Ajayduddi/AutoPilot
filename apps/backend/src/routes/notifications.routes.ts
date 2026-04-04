@@ -125,6 +125,17 @@ router.post('/:id/read', async (req, res, next) => {
   }
 });
 
+// Mark all notifications as read
+router.post('/read-all', async (req, res, next) => {
+  try {
+        const userId = req.auth!.user.id;
+        const readCount = await NotificationService.markAllAsRead(userId);
+    res.json({ status: 'ok', data: { readCount } });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Clear all notifications for the current user
 router.delete('/', async (req, res, next) => {
   try {

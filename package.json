@@ -12,6 +12,7 @@
     "build": "bun --filter='*' run build",
     "typecheck": "bun --filter='*' run typecheck",
     "test": "bun --filter='*' run test",
-    "ci:check-pr-size": "bun scripts/ci/check-pr-size.ts"
+    "ci:check-pr-size": "bun scripts/ci/check-pr-size.ts",
+    "ci:check-migration-journal": "bun scripts/ci/check-migration-journal.ts"
   }
 }

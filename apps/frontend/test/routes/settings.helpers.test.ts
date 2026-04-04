@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { firstParam, mapLegacyTab, normalizeSection } from "./settings.helpers";
+import { firstParam, mapLegacyTab, normalizeSection } from "../../src/routes/settings.helpers";
 
 describe("settings.helpers", () => {
   it("maps legacy tab values", () => {

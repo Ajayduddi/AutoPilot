@@ -23,11 +23,14 @@ export function errorMiddleware(err: Error, req: Request, res: Response, next: N
     stack: err.stack,
   }));
 
-  if (err instanceof ZodError) {
+  if (err instanceof ZodError || err.name === 'ZodError') {
     return res.status(400).json({
-      error: 'Validation Error',
+      error: {
+        message: 'Validation Error',
+        code: 'VALIDATION_ERROR',
+      },
       traceId,
-      details: err.issues
+      details: (err as ZodError).issues,
     });
   }
 

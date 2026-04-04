@@ -110,6 +110,10 @@ export class NotificationService {
     return NotificationRepo.markAsRead(notificationId, userId);
   }
 
+  static async markAllAsRead(userId: string) {
+    return NotificationRepo.markAllAsRead(userId);
+  }
+
     static async clearAll(userId: string) {
     return NotificationRepo.deleteAllForUser(userId);
   }

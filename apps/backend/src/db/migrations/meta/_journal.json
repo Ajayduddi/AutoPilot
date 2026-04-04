@@ -26,8 +26,8 @@
     {
       "idx": 3,
       "version": "7",
-      "when": 1774679400000,
-      "tag": "0005_user_timezone",
+      "when": 1774546200000,
+      "tag": "0003_auth_sessions",
       "breakpoints": true
     },
     {

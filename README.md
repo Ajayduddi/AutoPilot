@@ -68,7 +68,7 @@ Switch between providers based on your needs:
 
 ```bash
 # Pull the image
-docker pull ajayduddi/autopilot:0.1.0
+docker pull ajayduddi/autopilot:latest
 
 # Copy and configure environment variables
 cp .env.example .env
@@ -140,7 +140,7 @@ version: '3.8'
 
 services:
   autopilot:
-    image: ajayduddi/autopilot:0.1.0
+    image: ajayduddi/autopilot:latest
     ports:
       - "3000:3000"
     env_file: .env.docker
@@ -410,17 +410,6 @@ Body: {
 - **Primary Runtime**: `AgentService` (Mastra-based agent runtime)
 - **Fallback Runtime**: `OrchestratorService` (deterministic orchestration)
 - Chat routes attempt agent runtime first; fallback to orchestrator on failure
-
-### Request Paths
-
-| Endpoint | Purpose |
-|----------|---------|
-| `/api/chat/*` | Chat messages and streaming |
-| `/api/workflows/*` | Workflow CRUD operations |
-| `/api/workflow-runs/*` | Execution history and status |
-| `/api/approvals/*` | Approval workflow management |
-| `/api/webhooks/*` | Provider callbacks |
-| `/api/notifications/stream` | SSE real-time updates |
 
 ## 🛠️ Development
 

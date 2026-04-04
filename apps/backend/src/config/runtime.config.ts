@@ -607,17 +607,8 @@ function parseApprovalMode(value: unknown, fallback: RuntimeApprovalMode): Runti
 
 /**
  * Loads, validates, and caches backend runtime configuration.
- *
- * @returns Fully normalized runtime configuration object.
- * @throws {RuntimeConfigValidationError} When one or more config inputs are invalid.
- *
- * @example
- * ```ts
- * const runtime = getRuntimeConfig();
- * console.log(runtime.approvalMode);
- * ```
  */
-export function getRuntimeConfig(): RuntimeConfig {
+function _getRuntimeConfig(): RuntimeConfig {
   if (cached) return cached;
 
     const homeDir = path.resolve(
@@ -959,33 +950,38 @@ export function isInteractiveQuestionEnforced(): boolean {
 /**
  * Clears cached runtime config so the next read reloads from disk/env.
  */
-export function resetRuntimeConfigCache(): void {
+function _resetRuntimeConfigCache(): void {
   cached = null;
 }
 
 /**
  * Persists selected runtime preferences to the config file and reloads cache.
- *
- * @param updates - Partial runtime preferences to merge into `config.json`.
- * @returns Updated runtime config after write and re-parse.
- * @throws {RuntimeConfigValidationError} When persisted values are invalid after merge.
- *
- * @example
- * ```ts
- * updateRuntimeConfigFile({ approvalMode: "auto" });
- * ```
  */
-export function updateRuntimeConfigFile(
+function _updateRuntimeConfigFile(
   updates: Partial<Pick<RuntimeConfigFile, "approvalMode" | "forceInteractiveQuestions" | "uploadDir">>,
 ): RuntimeConfig {
-    const current = getRuntimeConfig();
-    const existing = readConfigFile(current.configPath);
-    const next: RuntimeConfigFile = {
+  const current = _getRuntimeConfig();
+  const existing = readConfigFile(current.configPath);
+  const next: RuntimeConfigFile = {
     ...existing,
     ...updates,
   };
   fs.mkdirSync(current.homeDir, { recursive: true });
   fs.writeFileSync(current.configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-  resetRuntimeConfigCache();
-  return getRuntimeConfig();
+  _resetRuntimeConfigCache();
+  return _getRuntimeConfig();
 }
+
+/**
+ * RuntimeConfigManager provides a mockable interface for runtime configuration.
+ */
+export const RuntimeConfigManager = {
+  getRuntimeConfig: _getRuntimeConfig,
+  updateRuntimeConfigFile: _updateRuntimeConfigFile,
+  resetRuntimeConfigCache: _resetRuntimeConfigCache,
+};
+
+// Backward compatibility wrappers
+export const getRuntimeConfig = () => RuntimeConfigManager.getRuntimeConfig();
+export const updateRuntimeConfigFile = (updates: any) => RuntimeConfigManager.updateRuntimeConfigFile(updates);
+export const resetRuntimeConfigCache = () => RuntimeConfigManager.resetRuntimeConfigCache();

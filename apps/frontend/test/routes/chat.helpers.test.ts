@@ -6,7 +6,7 @@ import {
   humanizeWorkflowKey,
   normalizeProviderName,
   prettyProviderName,
-} from "./chat.helpers";
+} from "../../src/routes/chat.helpers";
 
 describe("chat.helpers", () => {
   it("normalizes provider names", () => {

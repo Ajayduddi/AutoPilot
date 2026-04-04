@@ -34,6 +34,12 @@ jobs:
 
   quality:
     runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      AUTH_COOKIE_SECRET: test_secret_for_ci_only
+      FRONTEND_ORIGIN: http://localhost:5173
+      PROVIDER_API_KEY_ENCRYPTION_KEY: this_is_a_ci_only_encryption_key_32_chars_min
+      WEBHOOK_CALLBACK_SECRET: ci_webhook_secret
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,17 +52,23 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Typecheck
+      - name: Validate migration journal
+        run: bun run ci:check-migration-journal
+
+      - name: Typecheck (all workspaces)
         run: bun run typecheck
 
-      - name: Lint
+      - name: Lint backend
         run: bun --filter=backend run lint
 
-      - name: Build
+      - name: Build (all workspaces)
         run: bun run build
 
-      - name: Test
-        run: bun run test
+      - name: Test frontend (unit)
+        run: bun --filter=frontend run test
+
+      - name: Test backend (unit/service)
+        run: bun --filter=backend run test:unit
 
   security-audit:
     runs-on: ubuntu-latest
@@ -73,7 +85,12 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Dependency Audit (SCA)
-        run: bun audit
+        run: |
+          set -euo pipefail
+          bun audit || {
+            echo "[ci] bun audit found vulnerabilities. Failing for triage."
+            exit 1
+          }
 
   backend-migration-preflight:
     runs-on: ubuntu-latest
@@ -110,15 +127,29 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Validate migration journal
+        run: bun run ci:check-migration-journal
+
       - name: Apply migrations
-        run: bun --filter=backend run db:migrate
+        run: |
+          set -euo pipefail
+          echo "[ci] Migration artifacts:"
+          ls -la apps/backend/src/db/migrations || true
+          ls -la apps/backend/src/db/migrations/meta || true
+          if ls apps/backend/src/db/migrations/*.sql >/dev/null 2>&1; then
+            echo "[ci] Running db:migrate"
+            bun --filter=backend run db:migrate
+          else
+            echo "[ci] No SQL migrations found. Running db:push:guarded for CI schema bootstrap."
+            bun --filter=backend run db:push:guarded
+          fi
 
       - name: DB preflight
         run: bun --filter=backend run db:preflight
 
-  backend-e2e-smoke:
+  backend-db-integration:
     runs-on: ubuntu-latest
-    needs: [quality]
+    needs: [quality, backend-migration-preflight]
     services:
       postgres:
         image: postgres:16
@@ -140,6 +171,7 @@ jobs:
       FRONTEND_ORIGIN: http://localhost:5173
       PROVIDER_API_KEY_ENCRYPTION_KEY: this_is_a_ci_only_encryption_key_32_chars_min
       WEBHOOK_CALLBACK_SECRET: ci_webhook_secret
+      REQUIRE_DB_TESTS: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -152,8 +184,75 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Validate migration journal
+        run: bun run ci:check-migration-journal
+
+      - name: Prepare backend schema for DB integration tests
+        run: |
+          set -euo pipefail
+          if ls apps/backend/src/db/migrations/*.sql >/dev/null 2>&1; then
+            bun --filter=backend run db:migrate
+          else
+            bun --filter=backend run db:push:guarded
+          fi
+          bun --filter=backend run db:preflight
+
+      - name: Run backend repository DB integration tests
+        run: bun --filter=backend run test:db:strict
+
+  backend-e2e-smoke:
+    runs-on: ubuntu-latest
+    needs: [quality, backend-migration-preflight]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chat_automation
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/chat_automation
+      NODE_ENV: test
+      AUTH_COOKIE_SECRET: test_secret_for_ci_only
+      FRONTEND_ORIGIN: http://localhost:5173
+      PROVIDER_API_KEY_ENCRYPTION_KEY: this_is_a_ci_only_encryption_key_32_chars_min
+      WEBHOOK_CALLBACK_SECRET: ci_webhook_secret
+      REQUIRE_DB_TESTS: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Validate migration journal
+        run: bun run ci:check-migration-journal
+
       - name: Apply migrations
-        run: bun --filter=backend run db:migrate
+        run: |
+          set -euo pipefail
+          if ls apps/backend/src/db/migrations/*.sql >/dev/null 2>&1; then
+            bun --filter=backend run db:migrate
+          else
+            echo "[ci] No SQL migrations found. Running db:push:guarded for CI schema bootstrap."
+            bun --filter=backend run db:push:guarded
+          fi
+          bun --filter=backend run db:preflight
+
+      - name: Run backend e2e suite
+        run: bun --filter=backend run test:e2e
 
       - name: Start backend
         run: |
@@ -163,6 +262,7 @@ jobs:
 
       - name: Wait for health endpoint
         run: |
+          set -euo pipefail
           for i in {1..30}; do
             if curl -fsS http://localhost:3000/health > /tmp/health.json; then
               exit 0
@@ -181,3 +281,91 @@ jobs:
           if [ -f /tmp/backend.pid ]; then
             kill "$(cat /tmp/backend.pid)" || true
           fi
+
+  docker-runtime-smoke:
+    runs-on: ubuntu-latest
+    needs: [quality, backend-migration-preflight]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chat_automation
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/chat_automation
+      NODE_ENV: test
+      AUTH_COOKIE_SECRET: test_secret_for_ci_only
+      FRONTEND_ORIGIN: http://localhost:3000
+      PROVIDER_API_KEY_ENCRYPTION_KEY: this_is_a_ci_only_encryption_key_32_chars_min
+      WEBHOOK_CALLBACK_SECRET: ci_webhook_secret
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Validate migration journal
+        run: bun run ci:check-migration-journal
+
+      - name: Apply migrations for container runtime
+        run: |
+          set -euo pipefail
+          if ls apps/backend/src/db/migrations/*.sql >/dev/null 2>&1; then
+            bun --filter=backend run db:migrate
+          else
+            bun --filter=backend run db:push:guarded
+          fi
+          bun --filter=backend run db:preflight
+
+      - name: Build Docker image
+        run: docker build -t autopilot-ci:${{ github.sha }} .
+
+      - name: Start Docker container
+        run: |
+          set -euo pipefail
+          docker run -d --name autopilot-ci \
+            --add-host=host.docker.internal:host-gateway \
+            -p 3000:3000 \
+            -e DATABASE_URL=postgres://postgres:postgres@host.docker.internal:5432/chat_automation \
+            -e AUTH_COOKIE_SECRET=test_secret_for_ci_only \
+            -e FRONTEND_ORIGIN=http://localhost:3000 \
+            -e PROVIDER_API_KEY_ENCRYPTION_KEY=this_is_a_ci_only_encryption_key_32_chars_min \
+            -e WEBHOOK_CALLBACK_SECRET=ci_webhook_secret \
+            autopilot-ci:${{ github.sha }}
+
+      - name: Wait for container health endpoint
+        run: |
+          set -euo pipefail
+          for i in {1..45}; do
+            if curl -fsS http://localhost:3000/health > /tmp/docker-health.json; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "[ci] Container health endpoint did not become ready in time."
+          docker logs autopilot-ci || true
+          exit 1
+
+      - name: Smoke check container readiness
+        run: curl -fsS http://localhost:3000/health/ready
+
+      - name: Stop Docker container
+        if: always()
+        run: |
+          docker logs autopilot-ci || true
+          docker stop autopilot-ci || true
+          docker rm autopilot-ci || true

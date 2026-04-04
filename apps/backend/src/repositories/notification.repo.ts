@@ -46,6 +46,13 @@ export const NotificationRepo = {
     return notif;
   },
 
+  async markAllAsRead(userId: string) {
+    return await db.update(notifications)
+      .set({ read: true })
+      .where(and(eq(notifications.userId, userId), eq(notifications.read, false)))
+      .returning({ id: notifications.id });
+  },
+
     async deleteAllForUser(userId: string) {
         const deleted = await db.delete(notifications)
       .where(eq(notifications.userId, userId))

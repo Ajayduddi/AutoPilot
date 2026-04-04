@@ -173,4 +173,99 @@ describe("LLM fallback chain", () => {
     (AutoModelRouterService as any).resolveCandidates = originalResolve;
     (WorkflowService as any).getAll = originalGetAll;
   });
+
+  it("parseIntent returns deterministic fallback when router yields zero candidates", async () => {
+    const originalResolve = AutoModelRouterService.resolveCandidates;
+    const originalGetAll = WorkflowService.getAll;
+
+    (WorkflowService as any).getAll = async () => [];
+    (AutoModelRouterService as any).resolveCandidates = async () => ({
+      mode: "auto",
+      candidates: [],
+    });
+
+    const parsed = await LLMService.parseIntent("hello");
+    expect(parsed.type).toBe("chat");
+    expect(String(parsed.reply || "")).toContain("lost connection");
+
+    (AutoModelRouterService as any).resolveCandidates = originalResolve;
+    (WorkflowService as any).getAll = originalGetAll;
+  });
+
+  it("streamReply fails over from generateReply failure to downstream stream candidate", async () => {
+    const originalResolve = AutoModelRouterService.resolveCandidates;
+    const originalGetAll = WorkflowService.getAll;
+
+    const nonStreamFailing: ILLMProvider = {
+      name: "non-stream-fail",
+      async parseIntent() { return { type: "chat", reply: "ok" }; },
+      async generateReply() { throw new Error("non-stream failure"); },
+    };
+    const streamSuccess: ILLMProvider = {
+      name: "stream-success",
+      async parseIntent() { return { type: "chat", reply: "ok" }; },
+      async generateReply() { return "unused"; },
+      async *generateReplyStream() {
+        yield "hello ";
+        yield "world";
+      },
+    };
+
+    (WorkflowService as any).getAll = async () => [];
+    (AutoModelRouterService as any).resolveCandidates = async () => ({
+      mode: "auto",
+      candidates: [
+        fakeCandidate("non-stream-fail", nonStreamFailing),
+        fakeCandidate("stream-success", streamSuccess),
+      ],
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of LLMService.streamReply("hello")) {
+      chunks.push(chunk);
+    }
+    expect(chunks.join("")).toBe("hello world");
+
+    (AutoModelRouterService as any).resolveCandidates = originalResolve;
+    (WorkflowService as any).getAll = originalGetAll;
+  });
+
+  it("streamReply throws terminal failure with attempt-chain details when all providers fail", async () => {
+    const originalResolve = AutoModelRouterService.resolveCandidates;
+    const originalGetAll = WorkflowService.getAll;
+
+    const providerA: ILLMProvider = {
+      name: "down-a",
+      async parseIntent() { return { type: "chat", reply: "ok" }; },
+      async generateReply() { throw new Error("a unavailable"); },
+    };
+    const providerB: ILLMProvider = {
+      name: "down-b",
+      async parseIntent() { return { type: "chat", reply: "ok" }; },
+      async generateReply() { throw new Error("b timeout"); },
+    };
+
+    (WorkflowService as any).getAll = async () => [];
+    (AutoModelRouterService as any).resolveCandidates = async () => ({
+      mode: "auto",
+      candidates: [fakeCandidate("down-a", providerA), fakeCandidate("down-b", providerB)],
+    });
+
+    let caught: Error | null = null;
+    try {
+      for await (const _chunk of LLMService.streamReply("hello")) {
+        // no-op
+      }
+    } catch (err: any) {
+      caught = err;
+    }
+
+    expect(caught).toBeTruthy();
+    expect(String(caught?.message || "")).toContain("All LLM candidates failed during streamReply");
+    expect(String(caught?.message || "")).toContain("down-a");
+    expect(String(caught?.message || "")).toContain("down-b");
+
+    (AutoModelRouterService as any).resolveCandidates = originalResolve;
+    (WorkflowService as any).getAll = originalGetAll;
+  });
 });

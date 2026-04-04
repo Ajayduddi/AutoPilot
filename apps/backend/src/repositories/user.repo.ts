@@ -96,15 +96,20 @@ export const UserRepo = {
   },
 
     async reassignLegacyDataTo(newUserId: string) {
-    await db.update(chatThreads).set({ userId: newUserId }).where(eq(chatThreads.userId, LEGACY_USER_ID));
-    await db.update(workflowRuns).set({ userId: newUserId }).where(eq(workflowRuns.userId, LEGACY_USER_ID));
-    await db.update(workflows).set({ ownerUserId: newUserId }).where(eq(workflows.ownerUserId, LEGACY_USER_ID));
-    await db.update(notifications).set({ userId: newUserId }).where(eq(notifications.userId, LEGACY_USER_ID));
-    await db.update(approvals).set({ userId: newUserId }).where(eq(approvals.userId, LEGACY_USER_ID));
-    await db.update(userConnections).set({ userId: newUserId }).where(eq(userConnections.userId, LEGACY_USER_ID));
-    await db.update(pushSubscriptions).set({ userId: newUserId }).where(eq(pushSubscriptions.userId, LEGACY_USER_ID));
-    await db.update(webhookSecrets).set({ createdByUserId: newUserId }).where(eq(webhookSecrets.createdByUserId, LEGACY_USER_ID));
-    await db.update(contextMemory).set({ userId: newUserId }).where(eq(contextMemory.userId, LEGACY_USER_ID));
+    await db.transaction(async (tx) => {
+      await tx.update(chatThreads).set({ userId: newUserId }).where(eq(chatThreads.userId, LEGACY_USER_ID));
+      await tx.update(workflowRuns).set({ userId: newUserId }).where(eq(workflowRuns.userId, LEGACY_USER_ID));
+      await tx.update(workflows).set({ ownerUserId: newUserId }).where(eq(workflows.ownerUserId, LEGACY_USER_ID));
+      await tx.update(notifications).set({ userId: newUserId }).where(eq(notifications.userId, LEGACY_USER_ID));
+      await tx.update(approvals).set({ userId: newUserId }).where(eq(approvals.userId, LEGACY_USER_ID));
+      await tx.update(userConnections).set({ userId: newUserId }).where(eq(userConnections.userId, LEGACY_USER_ID));
+      await tx.update(pushSubscriptions).set({ userId: newUserId }).where(eq(pushSubscriptions.userId, LEGACY_USER_ID));
+      await tx
+        .update(webhookSecrets)
+        .set({ createdByUserId: newUserId })
+        .where(eq(webhookSecrets.createdByUserId, LEGACY_USER_ID));
+      await tx.update(contextMemory).set({ userId: newUserId }).where(eq(contextMemory.userId, LEGACY_USER_ID));
+    });
   },
 
     async deleteLegacyUser() {

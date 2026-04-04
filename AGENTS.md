@@ -112,6 +112,9 @@ CI currently enforces:
 5. Do not weaken production env/config validation in backend bootstrap.
 6. Do not use destructive git commands unless explicitly requested.
 7. Do not mix unrelated UI redesign into behavior fixes.
+8. **Bun runtime is mandatory across this repository**: prefer Bun-native APIs/utilities for filesystem, crypto, path/process/runtime operations.
+9. **Do not introduce new `node:*` runtime modules** (`node:fs`, `node:path`, `node:crypto`, etc.) when a Bun-native equivalent exists.
+10. If existing code uses Node runtime modules in touched files, migrate those touched paths to Bun-native APIs as part of the same change unless blocked by a third-party library contract.
 
 ## 7) Style and Conventions (Inferred from Code)
 
@@ -130,6 +133,7 @@ CI currently enforces:
 - Prefer deterministic installs (`--frozen-lockfile`) in CI/container flows.
 - Add dependencies only to the workspace that needs them.
 - Avoid build steps that depend on runtime network fetches unless explicitly required.
+- Runtime helpers should prefer Bun-native primitives over Node stdlib imports.
 
 ## 9) Database Policy
 
@@ -192,4 +196,3 @@ CI currently enforces:
 - Report validations actually executed.
 - Call out risks and tradeoffs directly.
 - If blocked, explain blocker, attempts, and safest next step.
-

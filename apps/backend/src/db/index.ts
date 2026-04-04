@@ -21,7 +21,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
  * @remarks
  * Falls back to local development defaults when `DATABASE_URL` is not set.
  */
-const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/autopilot';
+const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/chat_automation';
 
 // Disable prefetch as it causes strict mode issues in generic pooling, though fine for Postgres locally
 const client = postgres(connectionString, { prepare: false });

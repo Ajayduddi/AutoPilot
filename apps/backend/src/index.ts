@@ -25,6 +25,7 @@ import { securityHeadersMiddleware } from './middleware/security-headers.middlew
 import { logger } from './util/logger';
 import { closeDbConnection } from './db';
 import { flushMetricsExporter, stopMetricsExporter } from './util/metrics';
+import { ChatRepo } from './repositories/chat.repo';
 import type { Server } from 'http';
 
 const app = express();
@@ -166,6 +167,7 @@ async function gracefulShutdown(signal: string) {
  */
 async function bootstrap() {
   await UserRepo.initSchemaIfNeeded();
+  await ChatRepo.assertAttachmentSchemaReady();
   const staticFrontendDir = process.env.FRONTEND_STATIC_DIR?.trim();
   if (staticFrontendDir) {
     const indexPath = buildStaticIndexPath(staticFrontendDir);
