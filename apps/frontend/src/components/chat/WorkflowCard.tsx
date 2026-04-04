@@ -1,6 +1,9 @@
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 
+/**
+ * Interface describing workflow card props shape.
+ */
 interface WorkflowCardProps {
   name: string;
   status: "running" | "completed" | "failed" | "waiting_approval";
@@ -10,7 +13,6 @@ interface WorkflowCardProps {
   timeline?: string;
   onViewDetails?: () => void;
 }
-
 const statusConfig = {
   running: {
     label: "Running",
@@ -34,9 +36,23 @@ const statusConfig = {
   },
 };
 
+/**
+ * Utility function to workflow card.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param props - Input value for WorkflowCard.
+ * @returns Return value from WorkflowCard.
+ *
+ * @example
+ * ```typescript
+ * const output = WorkflowCard(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function WorkflowCard(props: WorkflowCardProps) {
   const cfg = () => statusConfig[props.status];
-
   const timeline = () => {
     if (props.timeline) return props.timeline;
     if (props.status === "running" && props.startedAt) return `Started ${props.startedAt}`;

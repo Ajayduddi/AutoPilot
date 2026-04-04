@@ -1,3 +1,8 @@
+/**
+ * @fileoverview routes/workflow-runs.routes.
+ *
+ * HTTP endpoints, request validation, and response composition for API resources.
+ */
 import { Router } from 'express';
 import { WorkflowService } from '../services/workflow.service';
 
@@ -8,7 +13,7 @@ const router = Router();
 // ─────────────────────────────────────────────────────────────
 router.get('/:runId', async (req, res, next) => {
   try {
-    const run = await WorkflowService.getRunById(req.params.runId);
+        const run = await WorkflowService.getRunById(req.params.runId);
     if (!run || run.userId !== req.auth!.user.id) {
       return res.status(404).json({
         status: 'error',
@@ -17,7 +22,7 @@ router.get('/:runId', async (req, res, next) => {
     }
 
     // Build structured response: normalized output in data, raw in _raw (for debugging)
-    const response: Record<string, unknown> = {
+        const response: Record<string, unknown> = {
       status: 'ok',
       data: {
         id: run.id,
@@ -58,7 +63,7 @@ router.get('/:runId', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────
 router.get('/trace/:traceId', async (req, res, next) => {
   try {
-    const run = await WorkflowService.getRunByTraceId(req.params.traceId);
+        const run = await WorkflowService.getRunByTraceId(req.params.traceId);
     if (!run || run.userId !== req.auth!.user.id) {
       return res.status(404).json({
         status: 'error',

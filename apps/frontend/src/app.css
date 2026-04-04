@@ -8,7 +8,9 @@
 
 @layer base {
   body {
-    @apply bg-neutral-900 text-neutral-100 antialiased h-screen overflow-hidden;
+    @apply bg-[#0a0a0a] text-neutral-100 antialiased h-screen overflow-hidden;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 
@@ -32,6 +34,28 @@
   .scrollbar-custom::-webkit-scrollbar-thumb:hover,
   *::-webkit-scrollbar-thumb:hover {
     background-color: rgba(115, 115, 115, 0.6);
+  }
+
+  /* ─── Mobile: suppress all scrollbars for cleaner look ───── */
+  @media (max-width: 768px) {
+    *::-webkit-scrollbar {
+      width: 0px;
+      height: 0px;
+    }
+  }
+
+  /* ─── Safe area bottom padding (iOS home indicator) ─────── */
+  .pb-safe {
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  }
+  .pb-safe-sm {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  /* ─── Minimum touch target size ─────────────────────────── */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
   }
 }
 
@@ -84,6 +108,46 @@ select option:checked {
 
 .animate-panel-slide-in {
   animation: panelSlideIn 0.2s ease-out both;
+}
+
+/* ─── Mobile Bottom Sheet slide-up ──────────────────────────────────────── */
+
+@keyframes sheetSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheetFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.animate-sheet-up {
+  animation: sheetSlideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.animate-sheet-overlay {
+  animation: sheetFadeIn 0.25s ease both;
+}
+
+/* ─── Chat feed message spacing ─────────────────────────────────────────── */
+
+.chat-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+@media (min-width: 768px) {
+  .chat-feed {
+    gap: 1.5rem;
+  }
 }
 
 /* ─── Fire / Burn Animation ────────────────────────────────────────────── */
@@ -227,12 +291,27 @@ select option:checked {
   padding-left: 1.35rem;
 }
 
+.markdown-body.ai-markdown ul {
+  list-style-type: disc;
+}
+
+.markdown-body.ai-markdown ol {
+  list-style-type: decimal;
+}
+
 .markdown-body.ai-markdown li {
-  margin: 0.26rem 0;
+  margin: 0.35rem 0;
+  padding-left: 0.15rem;
 }
 
 .markdown-body.ai-markdown li::marker {
   color: #a3a3a3;
+}
+
+/* Nested lists */
+.markdown-body.ai-markdown li > ul,
+.markdown-body.ai-markdown li > ol {
+  margin-top: 0.25rem;
 }
 
 .markdown-body.ai-markdown blockquote {
@@ -348,48 +427,226 @@ select option:checked {
 .markdown-body.ai-markdown .ai-md-table-wrap {
   width: 100%;
   overflow-x: auto;
-  border: 1px solid rgba(115, 115, 115, 0.24);
-  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background-color: rgba(23, 23, 23, 0.6);
 }
 
 .markdown-body.ai-markdown .ai-md-table-wrap table {
   margin: 0;
-  min-width: 600px;
+  width: 100%;
+  min-width: 500px;
   display: table;
   border-collapse: collapse;
+  background-color: transparent !important;
+  text-align: left;
+}
+
+.markdown-body.ai-markdown .ai-md-table-wrap tr {
+  background-color: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background-color 0.15s ease;
+}
+
+.markdown-body.ai-markdown .ai-md-table-wrap tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.02) !important;
 }
 
 .markdown-body.ai-markdown .ai-md-table-wrap thead {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.markdown-body.ai-markdown .ai-md-table-wrap thead tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .markdown-body.ai-markdown .ai-md-table-wrap th,
 .markdown-body.ai-markdown .ai-md-table-wrap td {
   border: 0;
-  border-bottom: 1px solid rgba(115, 115, 115, 0.2);
-  padding: 0.7rem 1rem;
+  padding: 0.85rem 0.5rem;
   white-space: normal;
-  min-width: 120px;
   vertical-align: top;
   line-height: 1.55;
+  color: #d1d5db;
+}
+
+.markdown-body.ai-markdown .ai-md-table-wrap th:first-child,
+.markdown-body.ai-markdown .ai-md-table-wrap td:first-child {
+  padding-left: 1rem;
+}
+
+.markdown-body.ai-markdown .ai-md-table-wrap th:last-child,
+.markdown-body.ai-markdown .ai-md-table-wrap td:last-child {
+  padding-right: 1rem;
 }
 
 .markdown-body.ai-markdown .ai-md-table-wrap th {
-  color: #e5e7eb;
-  font-weight: 600;
-  font-size: 0.8rem;
+  color: #9ca3af;
+  font-weight: 500;
+  font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.05em;
+  padding-bottom: 0.75rem;
   white-space: nowrap;
 }
 
 .markdown-body.ai-markdown .ai-md-table-wrap td {
-  color: #f3f4f6;
-  font-size: 0.88rem;
+  font-size: 0.875rem;
+  min-width: 140px;
+  word-wrap: break-word;
+  white-space: normal;
 }
 
-.markdown-body.ai-markdown .ai-md-table-wrap tr:last-child td {
+.markdown-body.ai-markdown .ai-md-table-wrap td:first-child,
+.markdown-body.ai-markdown .ai-md-table-wrap th:first-child {
+  min-width: 50px;
+}
+
+.markdown-body.ai-markdown .ai-md-table-wrap tr:last-child {
   border-bottom: 0;
+}
+
+.email-draft-card {
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(38, 38, 38, 0.9);
+  padding: 1.2rem 1.35rem;
+}
+
+.email-draft-label {
+  font-size: 0.8rem;
+  line-height: 1.1rem;
+  color: #a3a3a3;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.email-draft-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.email-draft-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  color: #d4d4d8;
+  transition: background-color 140ms ease, color 140ms ease, opacity 140ms ease;
+}
+
+.email-draft-icon-button:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fafafa;
+}
+
+.email-draft-subject-row {
+  margin-top: 0.9rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 0.9rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 0.8rem;
+}
+
+.email-draft-subject-label {
+  font-size: 0.84rem;
+  line-height: 1.55rem;
+  color: #e5e7eb;
+  font-weight: 500;
+}
+
+.email-draft-subject-text {
+  margin: 0;
+  font-size: 0.93rem;
+  line-height: 1.55rem;
+  color: #f3f4f6;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.email-draft-body {
+  margin-top: 1.1rem;
+}
+
+.email-draft-markdown.markdown-body.ai-markdown {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: #f3f4f6;
+  font-size: 0.95rem;
+  line-height: 1.8;
+  max-width: 70ch;
+}
+
+.email-draft-markdown.markdown-body.ai-markdown p {
+  margin: 0;
+}
+
+.email-draft-markdown.markdown-body.ai-markdown hr {
+  display: none;
+}
+
+.email-draft-markdown.markdown-body.ai-markdown ul,
+.email-draft-markdown.markdown-body.ai-markdown ol {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.email-draft-markdown.markdown-body.ai-markdown li + li {
+  margin-top: 0.5rem;
+}
+
+.email-draft-markdown.markdown-body.ai-markdown strong {
+  color: #fafafa;
+}
+
+.email-draft-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.email-draft-section-list {
+  margin-top: 0.2rem;
+  margin-bottom: 0.2rem;
+}
+
+.email-draft-section-signoff {
+  margin-top: 0.25rem;
+}
+
+.email-draft-section-signature {
+  margin-top: -0.25rem;
+}
+
+.email-draft-signature-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.email-draft-signature-line .markdown-body.ai-markdown {
+  margin: 0;
+  padding: 0;
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+.email-draft-outro .markdown-body.ai-markdown {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: #d4d4d8;
+  max-width: 70ch;
+}
+
+.email-draft-outro .markdown-body.ai-markdown > * + * {
+  margin-top: 0.9rem;
 }
 
 /* ─── Workflow Module Palette ───────────────────────────────────────────── */
@@ -437,6 +694,7 @@ select option:checked {
   line-height: 1.25;
   font-weight: 600;
   color: #f5f5f5;
+  letter-spacing: -0.01em;
 }
 
 .page-subtitle {
@@ -444,6 +702,7 @@ select option:checked {
   font-size: 12px;
   line-height: 1.4;
   color: #737373;
+  letter-spacing: 0;
 }
 
 @media (max-width: 768px) {
@@ -464,4 +723,158 @@ select option:checked {
   .markdown-body.ai-markdown pre {
     padding: 0.84rem 0.8rem;
   }
+
+  .email-draft-card {
+    border-radius: 1.2rem;
+    padding: 0.95rem 1rem;
+  }
+
+  .email-draft-icon-button {
+    width: 1.9rem;
+    height: 1.9rem;
+  }
+
+  .email-draft-subject-row {
+    margin-top: 0.8rem;
+    padding-bottom: 0.8rem;
+    gap: 0.6rem;
+  }
+
+  .email-draft-subject-label,
+  .email-draft-subject-text {
+    font-size: 0.86rem;
+    line-height: 1.45rem;
+  }
+
+  .email-draft-body {
+    margin-top: 0.95rem;
+  }
+
+  .email-draft-markdown.markdown-body.ai-markdown {
+    font-size: 0.9rem;
+    line-height: 1.72;
+    max-width: 100%;
+  }
+
+  .email-draft-sections {
+    gap: 1.05rem;
+  }
+
+  .markdown-body.ai-markdown .ai-md-table-wrap table {
+    min-width: 520px;
+  }
+
+  .markdown-body.ai-markdown .ai-md-table-wrap th,
+  .markdown-body.ai-markdown .ai-md-table-wrap td {
+    padding: 0.65rem 0.4rem;
+  }
+
+  .markdown-body.ai-markdown .ai-md-table-wrap th:first-child,
+  .markdown-body.ai-markdown .ai-md-table-wrap td:first-child {
+    padding-left: 0.7rem;
+  }
+
+  .markdown-body.ai-markdown .ai-md-table-wrap th:last-child,
+  .markdown-body.ai-markdown .ai-md-table-wrap td:last-child {
+    padding-right: 0.7rem;
+  }
+
+  .markdown-body.ai-markdown .ai-md-table-wrap th {
+    font-size: 0.68rem;
+  }
+
+  .markdown-body.ai-markdown .ai-md-table-wrap td {
+    font-size: 0.8rem;
+    min-width: 108px;
+    line-height: 1.45;
+  }
+
+  .markdown-body.ai-markdown .ai-md-table-wrap td:first-child,
+  .markdown-body.ai-markdown .ai-md-table-wrap th:first-child {
+    min-width: 44px;
+  }
+
+  .markdown-body.ai-markdown .ai-md-table-wrap .ai-col-description {
+    min-width: 210px;
+  }
+
+  .markdown-body.ai-markdown .ai-md-table-wrap .ai-col-tech-stack {
+    min-width: 120px;
+  }
+
+  .markdown-body.ai-markdown .ai-md-table-wrap .ai-col-primary {
+    min-width: 128px;
+  }
+
+  .markdown-body.ai-markdown .ai-md-table-wrap .ai-col-duration {
+    min-width: 104px;
+  }
+
+  .markdown-body.ai-markdown .ai-md-table-wrap .ai-col-link {
+    min-width: 64px;
+    white-space: nowrap;
+  }
+}
+
+/* ─── Settings section entrance ─────────────────────────────────────────── */
+
+@keyframes sectionFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.settings-section-enter {
+  animation: sectionFadeIn 0.25s ease-out both;
+}
+
+/* ─── Workflow card subtle glow on hover ─────────────────────────────────── */
+
+.workflow-card-glow {
+  position: relative;
+}
+
+.workflow-card-glow::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), transparent 50%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.workflow-card-glow:hover::before {
+  opacity: 1;
+}
+
+/* ─── Mobile touch improvements ──────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  /* Disable hover effects on touch devices */
+  @media (hover: none) {
+    .group:hover {
+      transform: none !important;
+    }
+  }
+
+  /* Smoother momentum scrolling */
+  .overflow-y-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ─── Focus ring utility (a11y) ──────────────────────────────────────── */
+
+.focus-ring:focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.5);
+  outline-offset: 2px;
+  border-radius: inherit;
 }

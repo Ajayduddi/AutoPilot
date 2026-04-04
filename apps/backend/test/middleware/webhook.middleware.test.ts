@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { NextFunction, Request, Response } from "express";
-import { WebhookSecretRepo } from "../repositories/webhook-secret.repo";
-import { requireWebhookSecret } from "./webhook.middleware";
+import { WebhookSecretRepo } from "../../src/repositories/webhook-secret.repo";
+import { requireWebhookSecret } from "../../src/middleware/webhook.middleware";
 
 function mockReq(headers: Record<string, string> = {}): Request {
   return { headers } as unknown as Request;
@@ -62,5 +62,19 @@ describe("requireWebhookSecret", () => {
 
     expect(state.statusCode).toBe(503);
     expect(state.payload).toBeTruthy();
+  });
+
+  it("rejects invalid provided secret", async () => {
+    process.env.WEBHOOK_CALLBACK_SECRET = "expected-secret";
+    process.env.NODE_ENV = "development";
+
+    (WebhookSecretRepo.findActiveSecretByPlaintext as unknown as Function) = async () => null;
+    (WebhookSecretRepo.hasActiveSecrets as unknown as Function) = async () => false;
+
+    const { res, state } = mockRes();
+    const next: NextFunction = () => undefined;
+    await requireWebhookSecret(mockReq({ "x-webhook-secret": "wrong-secret" }), res, next);
+
+    expect(state.statusCode).toBe(401);
   });
 });

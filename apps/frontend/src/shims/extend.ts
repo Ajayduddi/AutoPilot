@@ -1,8 +1,9 @@
+/**
+  * plain object type alias.
+  */
 type PlainObject = Record<string, unknown>;
-
 const isObject = (value: unknown): value is PlainObject =>
   Object.prototype.toString.call(value) === "[object Object]";
-
 const cloneValue = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(cloneValue);
   if (isObject(value)) {
@@ -12,7 +13,6 @@ const cloneValue = (value: unknown): unknown => {
   }
   return value;
 };
-
 const mergeInto = (target: PlainObject, source: PlainObject, deep: boolean): PlainObject => {
   for (const key of Object.keys(source)) {
     const value = source[key];
@@ -34,6 +34,21 @@ const mergeInto = (target: PlainObject, source: PlainObject, deep: boolean): Pla
   return target;
 };
 
+/**
+ * Utility function to extend.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param ...args - Input value for extend.
+ * @returns Return value from extend.
+ *
+ * @example
+ * ```typescript
+ * const output = extend(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function extend(...args: unknown[]): PlainObject {
   let deep = false;
   let index = 0;
@@ -42,7 +57,6 @@ function extend(...args: unknown[]): PlainObject {
     deep = args[0] as boolean;
     index = 1;
   }
-
   const target = (args[index] && isObject(args[index]) ? args[index] : {}) as PlainObject;
   index += 1;
 

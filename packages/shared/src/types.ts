@@ -1,3 +1,10 @@
+/**
+ * Payload contract sent from this app to an n8n workflow trigger.
+ *
+ * @remarks
+ * This envelope carries traceability fields and callback endpoints so n8n
+ * can report completion/failure back to the platform.
+ */
 export interface N8nInboundEnvelope {
   trace_id: string;
   workflow_key: string;
@@ -9,6 +16,9 @@ export interface N8nInboundEnvelope {
   notification_url: string;
 }
 
+/**
+ * Callback contract sent from n8n to this app after trigger/processing.
+ */
 export interface N8nOutboundEnvelope {
   trace_id: string;
   workflow_key: string;

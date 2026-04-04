@@ -2,6 +2,9 @@ import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Show } from "solid-js";
 
+/**
+ * Interface describing task card props shape.
+ */
 interface TaskCardProps {
   title: string;
   dueDate?: string;
@@ -11,13 +14,27 @@ interface TaskCardProps {
   onViewDetails?: () => void;
   onOpenPanel?: () => void;
 }
-
 const statusColor = (s: string) => {
   if (s === "Pending") return "text-amber-400 bg-amber-500/10 border-amber-500/20";
   if (s === "Complete") return "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
   return "text-neutral-400 bg-neutral-800 border-neutral-700";
 };
 
+/**
+ * Utility function to task card.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param props - Input value for TaskCard.
+ * @returns Return value from TaskCard.
+ *
+ * @example
+ * ```typescript
+ * const output = TaskCard(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function TaskCard(props: TaskCardProps) {
   return (
     <Card class="w-full max-w-lg border-neutral-800/70 hover:border-blue-500/35 hover:shadow-lg hover:shadow-black/30 transition-all duration-200">

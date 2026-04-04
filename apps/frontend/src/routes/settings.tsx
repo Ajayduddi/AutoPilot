@@ -1,7 +1,7 @@
 import { Title } from "@solidjs/meta";
 import { useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, Show } from "solid-js";
-import { authApi, type AccountInfo, settingsApi } from "../lib/api";
+import { authApi, type AccountInfo, type RuntimePreferences, settingsApi } from "../lib/api";
 import { SettingsSectionAccount } from "../components/settings/SettingsSectionAccount";
 import { SettingsSectionConnections } from "../components/settings/SettingsSectionConnections";
 import { SettingsSectionWebhooks } from "../components/settings/SettingsSectionWebhooks";
@@ -9,8 +9,17 @@ import { SettingsShell } from "../components/settings/SettingsShell";
 import { firstParam, mapLegacyTab, normalizeSection } from "./settings.helpers";
 import {
   EMAIL_REGEX,
+  /**
+    * confirm state type alias.
+    */
   type ConfirmState,
+  /**
+    * settings section type alias.
+    */
   type SettingsSection,
+  /**
+    * webhook secret record type alias.
+    */
   type WebhookSecretRecord,
   providerLabel,
 } from "../components/settings/types";
@@ -22,6 +31,9 @@ export default function Settings() {
   const [account, { refetch: refetchAccount }] = createResource<AccountInfo>(() => authApi.getAccount());
   const [webhookSecrets, { refetch: refetchWebhookSecrets }] = createResource<WebhookSecretRecord[]>(
     () => settingsApi.getWebhookSecrets(),
+  );
+  const [runtimePreferences, { refetch: refetchRuntimePreferences }] = createResource<RuntimePreferences>(
+    () => settingsApi.getRuntimePreferences(),
   );
 
   const [isAdding, setIsAdding] = createSignal(false);
@@ -49,6 +61,7 @@ export default function Settings() {
   const [copiedEndpoint, setCopiedEndpoint] = createSignal<"" | "unified">("");
 
   const [profileName, setProfileName] = createSignal("");
+  const [profileTimezone, setProfileTimezone] = createSignal("");
   const [profileSaving, setProfileSaving] = createSignal(false);
   const [profileError, setProfileError] = createSignal("");
 
@@ -62,7 +75,7 @@ export default function Settings() {
   const [passwordConfirm, setPasswordConfirm] = createSignal("");
   const [passwordSaving, setPasswordSaving] = createSignal(false);
   const [passwordError, setPasswordError] = createSignal("");
-
+  const [approvalModeSaving, setApprovalModeSaving] = createSignal(false);
   const activeSection = createMemo<SettingsSection>(() => {
     const legacy = mapLegacyTab(firstParam(searchParams.tab));
     return normalizeSection(firstParam(searchParams.section) ?? legacy ?? undefined);
@@ -76,7 +89,6 @@ export default function Settings() {
       setSearchParams({ section: normalized, tab: undefined as unknown as string }, { replace: true });
     }
   });
-
   const activeProviderConfig = createMemo(() => (providers() || []).find((p) => p.isDefault));
   const activeProviderName = createMemo(() => providerLabel(activeProviderConfig()?.provider || ""));
 
@@ -87,62 +99,93 @@ export default function Settings() {
       if (!active) return [] as string[];
       return settingsApi.fetchModels({
         provider: active.provider,
+        providerId: active.id,
         baseUrl: active.baseUrl || undefined,
         apiKey: active.apiKey || undefined,
       });
     },
   );
-
   const defaultModelOptions = createMemo(() =>
-    (activeProviderModels() || []).map((modelName) => ({
-      value: modelName,
-      label: `${activeProviderName()}: ${modelName}`,
-    })),
+    [
+      { value: "auto", label: "Auto (Agent picks best model/provider)" },
+      ...(activeProviderModels() || []).map((modelName) => ({
+        value: modelName,
+        label: `${activeProviderName()}: ${modelName}`,
+      })),
+    ],
   );
-
+  const defaultModelDisplayLabel = createMemo(() => {
+    const value = defaultModel().trim();
+    if (!value) return "Not set";
+    if (value.toLowerCase() === "auto") return "Auto (Agent picks best model/provider)";
+    return `${activeProviderName()}: ${value}`;
+  });
   const activeWebhookSecrets = createMemo(() =>
     (webhookSecrets() || []).filter((secret) => {
       const status = (secret.status || "").toLowerCase();
       return !secret.revokedAt && status !== "revoked";
     }),
   );
-
   const profileDirty = createMemo(() => {
     const original = (account()?.name || "").trim();
-    return profileName().trim() !== original;
+    const originalTimezone = (account()?.timezone || "").trim();
+    return profileName().trim() !== original || profileTimezone().trim() !== originalTimezone;
   });
-
   const canSaveProfile = createMemo(() => {
     const name = profileName().trim();
     return profileDirty() && name.length > 0 && name.length <= 80 && !profileSaving();
   });
-
   const emailDirty = createMemo(() => {
     const original = (account()?.email || "").trim().toLowerCase();
     return emailValue().trim().toLowerCase() !== original;
   });
-
   const canSaveEmail = createMemo(() => {
     const email = emailValue().trim().toLowerCase();
     return emailDirty() && EMAIL_REGEX.test(email) && emailCurrentPassword().length > 0 && !emailSaving();
   });
-
   const passwordHasInput = createMemo(() =>
     Boolean(passwordCurrent().trim() || passwordNext().trim() || passwordConfirm().trim()),
   );
-
   const passwordFormValid = createMemo(() =>
     passwordCurrent().trim().length > 0 && passwordNext().length >= 8 && passwordNext() === passwordConfirm(),
   );
-
   const canSavePassword = createMemo(() => passwordFormValid() && !passwordSaving());
 
   createEffect(() => {
     const data = account();
     if (!data) return;
     setProfileName(data.name || "");
+    setProfileTimezone(data.timezone || "");
     setEmailValue(data.email || "");
   });
+
+  /**
+   * Utility function to handle approval mode change.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param mode - Input value for handleApprovalModeChange.
+   * @returns Return value from handleApprovalModeChange.
+   *
+   * @example
+   * ```typescript
+   * const output = handleApprovalModeChange(value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
+  async function handleApprovalModeChange(mode: "default" | "auto") {
+    try {
+      setApprovalModeSaving(true);
+      await settingsApi.updateRuntimePreferences({ approvalMode: mode });
+      await refetchRuntimePreferences();
+      pushNotice("success", mode === "auto" ? "Agent auto-approval enabled." : "Default approval mode enabled.");
+    } catch (err: any) {
+      pushNotice("error", err.message || "Failed to update approval mode.");
+    } finally {
+      setApprovalModeSaving(false);
+    }
+  }
 
   createEffect(() => {
     const active = activeProviderConfig();
@@ -159,15 +202,60 @@ export default function Settings() {
     setDefaultModel(first);
   });
 
+  /**
+   * Utility function to set section.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param section - Input value for setSection.
+   * @returns Return value from setSection.
+   *
+   * @example
+   * ```typescript
+   * const output = setSection(value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   function setSection(section: SettingsSection) {
     setSearchParams({ section, tab: undefined as unknown as string });
   }
 
+  /**
+   * Utility function to push notice.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param tone - Input value for pushNotice.
+   * @param message - Input value for pushNotice.
+   * @returns Return value from pushNotice.
+   *
+   * @example
+   * ```typescript
+   * const output = pushNotice(value, value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   function pushNotice(tone: "success" | "error", message: string) {
     setPageNotice({ tone, message });
     window.setTimeout(() => setPageNotice(null), 2600);
   }
 
+  /**
+   * Utility function to reset form.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from resetForm.
+   *
+   * @example
+   * ```typescript
+   * const output = resetForm();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   function resetForm() {
     setProvider("ollama");
     setApiKey("");
@@ -175,6 +263,20 @@ export default function Settings() {
     setErrorMsg("");
   }
 
+  /**
+   * Utility function to handle save.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from handleSave.
+   *
+   * @example
+   * ```typescript
+   * const output = handleSave();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleSave() {
     try {
       setSaving(true);
@@ -198,6 +300,21 @@ export default function Settings() {
     }
   }
 
+  /**
+   * Utility function to handle set active.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param id - Input value for handleSetActive.
+   * @returns Return value from handleSetActive.
+   *
+   * @example
+   * ```typescript
+   * const output = handleSetActive(value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleSetActive(id: string) {
     try {
       await settingsApi.setActiveProvider(id);
@@ -209,6 +326,20 @@ export default function Settings() {
     }
   }
 
+  /**
+   * Utility function to handle save default model.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from handleSaveDefaultModel.
+   *
+   * @example
+   * ```typescript
+   * const output = handleSaveDefaultModel();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleSaveDefaultModel() {
     const active = activeProviderConfig();
     const model = defaultModel().trim();
@@ -229,6 +360,20 @@ export default function Settings() {
     }
   }
 
+  /**
+   * Utility function to handle save profile.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from handleSaveProfile.
+   *
+   * @example
+   * ```typescript
+   * const output = handleSaveProfile();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleSaveProfile() {
     const name = profileName().trim();
     if (!name) {
@@ -242,9 +387,9 @@ export default function Settings() {
     try {
       setProfileSaving(true);
       setProfileError("");
-      await authApi.updateProfile({ name });
+      await authApi.updateProfile({ name, timezone: profileTimezone().trim() || null });
       await refetchAccount();
-      pushNotice("success", "Username updated.");
+      pushNotice("success", "Profile updated.");
     } catch (err: any) {
       const message = err.message || "Failed to update username.";
       setProfileError(message);
@@ -254,6 +399,20 @@ export default function Settings() {
     }
   }
 
+  /**
+   * Utility function to handle save email.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from handleSaveEmail.
+   *
+   * @example
+   * ```typescript
+   * const output = handleSaveEmail();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleSaveEmail() {
     const email = emailValue().trim().toLowerCase();
     if (!email || !EMAIL_REGEX.test(email)) {
@@ -280,6 +439,20 @@ export default function Settings() {
     }
   }
 
+  /**
+   * Utility function to handle save password.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from handleSavePassword.
+   *
+   * @example
+   * ```typescript
+   * const output = handleSavePassword();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleSavePassword() {
     if (!passwordCurrent()) {
       setPasswordError("Current password is required.");
@@ -313,6 +486,21 @@ export default function Settings() {
     }
   }
 
+  /**
+   * Utility function to request delete provider.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param id - Input value for requestDeleteProvider.
+   * @returns Return value from requestDeleteProvider.
+   *
+   * @example
+   * ```typescript
+   * const output = requestDeleteProvider(value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   function requestDeleteProvider(id: string) {
     setConfirmState({
       kind: "delete-provider",
@@ -323,6 +511,21 @@ export default function Settings() {
     });
   }
 
+  /**
+   * Utility function to request revoke webhook secret.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param id - Input value for requestRevokeWebhookSecret.
+   * @returns Return value from requestRevokeWebhookSecret.
+   *
+   * @example
+   * ```typescript
+   * const output = requestRevokeWebhookSecret(value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   function requestRevokeWebhookSecret(id: string) {
     setConfirmState({
       kind: "revoke-secret",
@@ -333,6 +536,20 @@ export default function Settings() {
     });
   }
 
+  /**
+   * Utility function to execute confirm.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from executeConfirm.
+   *
+   * @example
+   * ```typescript
+   * const output = executeConfirm();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function executeConfirm() {
     const modal = confirmState();
     if (!modal) return;
@@ -356,12 +573,25 @@ export default function Settings() {
     }
   }
 
+  /**
+   * Utility function to handle generate webhook secret.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from handleGenerateWebhookSecret.
+   *
+   * @example
+   * ```typescript
+   * const output = handleGenerateWebhookSecret();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleGenerateWebhookSecret() {
     try {
       setIsGeneratingWebhookKey(true);
       setWebhookErrorMsg("");
       setCopiedWebhookSecret(false);
-
       const created = (await settingsApi.createWebhookSecret({
         label: webhookLabel().trim() || undefined,
       })) as WebhookSecretRecord;
@@ -379,6 +609,20 @@ export default function Settings() {
     }
   }
 
+  /**
+   * Utility function to handle copy generated webhook secret.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from handleCopyGeneratedWebhookSecret.
+   *
+   * @example
+   * ```typescript
+   * const output = handleCopyGeneratedWebhookSecret();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleCopyGeneratedWebhookSecret() {
     try {
       const secret = generatedWebhookSecret();
@@ -392,6 +636,22 @@ export default function Settings() {
     }
   }
 
+  /**
+   * Utility function to copy example.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param kind - Input value for copyExample.
+   * @param text - Input value for copyExample.
+   * @returns Return value from copyExample.
+   *
+   * @example
+   * ```typescript
+   * const output = copyExample(value, value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function copyExample(kind: "unified", text: string) {
     try {
       await navigator.clipboard.writeText(text);
@@ -402,6 +662,22 @@ export default function Settings() {
     }
   }
 
+  /**
+   * Utility function to copy endpoint.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param kind - Input value for copyEndpoint.
+   * @param value - Input value for copyEndpoint.
+   * @returns Return value from copyEndpoint.
+   *
+   * @example
+   * ```typescript
+   * const output = copyEndpoint(value, value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function copyEndpoint(kind: "unified", value: string) {
     try {
       await navigator.clipboard.writeText(value);
@@ -412,6 +688,21 @@ export default function Settings() {
     }
   }
 
+  /**
+   * Utility function to toggle example.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param kind - Input value for toggleExample.
+   * @returns Return value from toggleExample.
+   *
+   * @example
+   * ```typescript
+   * const output = toggleExample(value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   function toggleExample(kind: "unified") {
     setExpandedExamples((prev) => ({ ...prev, [kind]: !prev[kind] }));
   }
@@ -437,6 +728,8 @@ export default function Settings() {
             canSaveProfile={canSaveProfile}
             profileDirty={profileDirty}
             handleSaveProfile={handleSaveProfile}
+            profileTimezone={profileTimezone}
+            setProfileTimezone={setProfileTimezone}
             emailValue={emailValue}
             setEmailValue={setEmailValue}
             emailCurrentPassword={emailCurrentPassword}
@@ -459,6 +752,10 @@ export default function Settings() {
             passwordHasInput={passwordHasInput}
             canSavePassword={canSavePassword}
             handleSavePassword={handleSavePassword}
+            runtimePreferences={runtimePreferences}
+            runtimePreferencesLoading={() => Boolean(runtimePreferences.loading)}
+            approvalModeSaving={approvalModeSaving}
+            handleApprovalModeChange={handleApprovalModeChange}
           />
         </Show>
 
@@ -479,6 +776,7 @@ export default function Settings() {
             setDefaultModel={setDefaultModel}
             savingDefaultModel={savingDefaultModel}
             defaultModelError={defaultModelError}
+            defaultModelDisplayLabel={defaultModelDisplayLabel}
             activeProviderConfig={activeProviderConfig}
             activeProviderName={activeProviderName}
             activeProviderModelsLoading={() => Boolean(activeProviderModels.loading)}

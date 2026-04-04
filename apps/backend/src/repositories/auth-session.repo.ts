@@ -1,8 +1,16 @@
+/**
+ * @fileoverview repositories/auth-session.repo.
+ *
+ * Persistence helpers for user authentication session lifecycle.
+ */
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { db } from '../db';
 import { authSessions } from '../db/schema';
 
+/**
+ * AuthSessionRepo exported constant.
+ */
 export const AuthSessionRepo = {
   async create(input: {
     userId: string;
@@ -22,6 +30,7 @@ export const AuthSessionRepo = {
     return created;
   },
 
+  /** Returns the active, non-expired session matching a token hash. */
   async getActiveByTokenHash(tokenHash: string) {
     return db.query.authSessions.findFirst({
       where: and(
@@ -32,22 +41,26 @@ export const AuthSessionRepo = {
     });
   },
 
+  /** Updates the last-seen timestamp for an existing session. */
   async touch(sessionId: string) {
     await db.update(authSessions).set({ lastSeenAt: new Date() }).where(eq(authSessions.id, sessionId));
   },
 
+  /** Revokes a session by session ID. */
   async revokeById(sessionId: string) {
     await db.update(authSessions)
       .set({ revokedAt: new Date() })
       .where(eq(authSessions.id, sessionId));
   },
 
+  /** Revokes sessions that match the given token hash. */
   async revokeByTokenHash(tokenHash: string) {
     await db.update(authSessions)
       .set({ revokedAt: new Date() })
       .where(eq(authSessions.tokenHash, tokenHash));
   },
 
+  /** Revokes all active sessions for a user, optionally preserving one session ID. */
   async revokeAllForUserExceptSession(userId: string, sessionId?: string | null) {
     const sessions = await db.query.authSessions.findMany({
       where: and(eq(authSessions.userId, userId), isNull(authSessions.revokedAt)),

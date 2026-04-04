@@ -1,3 +1,8 @@
+/**
+ * @fileoverview routes/workflows.routes.
+ *
+ * Workflow CRUD, execution, validation, and connectivity test endpoints.
+ */
 import { Router } from 'express';
 import { WorkflowService } from '../services/workflow.service';
 import { validate } from '../middleware/validate.middleware';
@@ -7,8 +12,40 @@ import {
   triggerWorkflowSchema,
   testConnectionSchema,
 } from '../schemas/workflow.schema';
-
+import { assertSafeOutboundUrl } from '../util/network-safety';
+import { incrementCounter, observeHistogram } from '../util/metrics';
 const router = Router();
+
+/**
+ * Normalizes dynamic workflow route segments for metrics labeling.
+ *
+ * @param path - Raw request path.
+ * @returns Path with high-cardinality identifiers replaced by stable tokens.
+ */
+function normalizeRoutePath(path: string): string {
+  return String(path || '')
+    .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ':id')
+    .replace(/\bwf_[a-z0-9_-]+\b/gi, ':workflow')
+    .replace(/\busr_[a-z0-9_-]+\b/gi, ':user');
+}
+
+router.use((req, res, next) => {
+    const startedAt = Date.now();
+  res.on('finish', () => {
+        const routePath = normalizeRoutePath(req.path);
+    observeHistogram('autopilot_workflow_route_latency_ms', Date.now() - startedAt, {
+      method: req.method,
+      route: routePath,
+      status: res.statusCode,
+    });
+    incrementCounter('autopilot_workflow_route_requests_total', {
+      method: req.method,
+      route: routePath,
+      status: res.statusCode,
+    });
+  });
+  next();
+});
 
 // ─────────────────────────────────────────────────────────────
 //  GET /api/workflows — List workflows with filters
@@ -16,13 +53,13 @@ const router = Router();
 router.get('/', async (req, res, next) => {
   try {
     const { provider, visibility, enabled, archived, search } = req.query;
-    const userId = req.auth!.user.id;
+        const userId = req.auth!.user.id;
 
-    const workflows = await WorkflowService.listAccessible(userId, {
+        const workflows = await WorkflowService.listAccessible(userId, {
       provider: provider as string | undefined,
       visibility: visibility as string | undefined,
-      enabled: enabled === undefined ? undefined : enabled === 'true',
-      archived: archived === undefined ? undefined : archived === 'true',
+            enabled: enabled === undefined ? undefined : enabled === 'true',
+            archived: archived === undefined ? undefined : archived === 'true',
       search: search as string | undefined,
     });
 
@@ -41,8 +78,8 @@ router.get('/', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────
 router.get('/:id', async (req, res, next) => {
   try {
-    const userId = req.auth!.user.id;
-    const workflow = await WorkflowService.getById(req.params.id, userId);
+        const userId = req.auth!.user.id;
+        const workflow = await WorkflowService.getById(req.params.id, userId);
     if (!workflow) {
       return res.status(404).json({
         status: 'error',
@@ -60,10 +97,10 @@ router.get('/:id', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────
 router.post('/', validate(createWorkflowSchema), async (req, res, next) => {
   try {
-    const data = req.body;
-    const userId = req.auth!.user.id;
+        const data = req.body;
+        const userId = req.auth!.user.id;
 
-    const workflow = await WorkflowService.create({
+        const workflow = await WorkflowService.create({
       key: data.key,
       name: data.name,
       description: data.description,
@@ -105,8 +142,8 @@ router.post('/', validate(createWorkflowSchema), async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────
 router.patch('/:id', validate(updateWorkflowSchema), async (req, res, next) => {
   try {
-    const userId = req.auth!.user.id;
-    const workflow = await WorkflowService.updateForUser(req.params.id as string, userId, req.body);
+        const userId = req.auth!.user.id;
+        const workflow = await WorkflowService.updateForUser(req.params.id as string, userId, req.body);
     if (!workflow) {
       return res.status(404).json({
         status: 'error',
@@ -128,9 +165,9 @@ router.patch('/:id', validate(updateWorkflowSchema), async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────
 router.delete('/:id', async (req, res, next) => {
   try {
-    const userId = req.auth!.user.id;
-    const mode = req.query.mode === 'hard' ? 'hard' : 'archive';
-    let workflow;
+        const userId = req.auth!.user.id;
+        const mode = req.query.mode === 'hard' ? 'hard' : 'archive';
+        let workflow;
 
     if (mode === 'hard') {
       workflow = await WorkflowService.deleteForUser(req.params.id, userId);
@@ -148,7 +185,7 @@ router.delete('/:id', async (req, res, next) => {
     res.json({
       status: 'ok',
       data: workflow,
-      meta: { message: mode === 'hard' ? 'Workflow permanently deleted' : 'Workflow archived' },
+            meta: { message: mode === 'hard' ? 'Workflow permanently deleted' : 'Workflow archived' },
     });
   } catch (err) {
     next(err);
@@ -160,11 +197,11 @@ router.delete('/:id', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────
 router.post('/:id/trigger', validate(triggerWorkflowSchema), async (req, res, next) => {
   try {
-    const id = req.params.id as string;
+        const id = req.params.id as string;
     const { source, input } = req.body;
-    const userId = req.auth!.user.id;
+        const userId = req.auth!.user.id;
 
-    const workflow = await WorkflowService.getById(id, userId);
+        const workflow = await WorkflowService.getById(id, userId);
     if (!workflow) {
       return res.status(404).json({
         status: 'error',
@@ -190,7 +227,7 @@ router.post('/:id/trigger', validate(triggerWorkflowSchema), async (req, res, ne
       });
     }
 
-    const run = await WorkflowService.execute(
+        const run = await WorkflowService.execute(
       workflow.id as string,
       workflow.key as string,
       workflow.provider as string,
@@ -224,8 +261,8 @@ router.post('/:id/trigger', validate(triggerWorkflowSchema), async (req, res, ne
 // ─────────────────────────────────────────────────────────────
 router.get('/:id/runs', async (req, res, next) => {
   try {
-    const userId = req.auth!.user.id;
-    const workflow = await WorkflowService.getById(req.params.id, userId);
+        const userId = req.auth!.user.id;
+        const workflow = await WorkflowService.getById(req.params.id, userId);
     if (!workflow) {
       return res.status(404).json({
         status: 'error',
@@ -233,10 +270,10 @@ router.get('/:id/runs', async (req, res, next) => {
       });
     }
 
-    const limit = req.query.limit ? Math.max(1, Math.min(200, parseInt(req.query.limit as string, 10))) : 50;
-    const before = typeof req.query.before === 'string' ? req.query.before : undefined;
-    const runs = await WorkflowService.getRunsByWorkflowId(req.params.id, limit, before);
-    const nextCursor = runs.length >= limit ? runs[runs.length - 1]?.createdAt : null;
+        const limit = req.query.limit ? Math.max(1, Math.min(200, parseInt(req.query.limit as string, 10))) : 50;
+        const before = typeof req.query.before === 'string' ? req.query.before : undefined;
+        const runs = await WorkflowService.getRunsByWorkflowId(req.params.id, limit, before);
+        const nextCursor = runs.length >= limit ? runs[runs.length - 1]?.createdAt : null;
 
     res.json({
       status: 'ok',
@@ -258,8 +295,8 @@ router.get('/:id/runs', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────
 router.post('/:id/validate', async (req, res, next) => {
   try {
-    const userId = req.auth!.user.id;
-    const result = await WorkflowService.validateWorkflowConfigForUser(req.params.id, userId);
+        const userId = req.auth!.user.id;
+        const result = await WorkflowService.validateWorkflowConfigForUser(req.params.id, userId);
     if (!result) {
       return res.status(404).json({
         status: 'error',
@@ -281,10 +318,14 @@ router.post('/:id/validate', async (req, res, next) => {
 router.post('/test-connection', validate(testConnectionSchema), async (req, res, next) => {
   try {
     const { executionEndpoint } = req.body;
+        const safeEndpoint = assertSafeOutboundUrl(executionEndpoint, {
+      allowPrivateLocalInDev: true,
+      requireHttpsInProd: true,
+    });
 
-    const startedAt = Date.now();
+        const startedAt = Date.now();
     try {
-      const response = await fetch(executionEndpoint, {
+            const response = await fetch(safeEndpoint.toString(), {
         method: 'HEAD',
         signal: AbortSignal.timeout(10000),
       });
@@ -312,4 +353,10 @@ router.post('/test-connection', validate(testConnectionSchema), async (req, res,
   }
 });
 
+/**
+ * Workflow management router for CRUD, validation, and trigger operations.
+ *
+ * @remarks
+ * Mounted at `/api/workflows` behind `requireAuth` in backend bootstrap.
+ */
 export { router as workflowsRouter };

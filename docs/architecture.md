@@ -1,132 +1,137 @@
-# AutoPilot — Architecture & Documentation
+# AutoPilot Architecture (Current)
 
 ## System Overview
 
-AutoPilot is a single-user, chat-first automation platform. Users interact through a conversational interface; the backend orchestrator classifies intent and either responds directly or triggers an n8n workflow via webhook.
+AutoPilot is a chat-first automation platform with:
 
----
+- backend orchestration for chat + workflow routing
+- workflow execution via provider adapters (n8n/make/zapier/custom/sim)
+- callback-driven workflow completion updates
+- approval-gated execution paths
+- frontend chat UI that renders structured assistant blocks
 
-## Component Map
+## Runtime Model
+
+- **Primary runtime**: `AgentService` (Mastra-based agent runtime)
+- **Fallback runtime**: `OrchestratorService` (deterministic orchestration path)
+- Chat routes call agent runtime first; if it fails, backend falls back to orchestrator.
+
+## High-Level Component Map
 
 ```mermaid
 graph TD
-    Browser["Browser / PWA<br/>(SolidStart)"]
-    Backend["Backend Orchestrator<br/>(Bun + Express)"]
-    DB["PostgreSQL<br/>(Drizzle ORM)"]
-    N8N["n8n<br/>(Workflow Engine)"]
-    LLM["LLM Provider<br/>(Ollama / Gemini / Groq)"]
+    Browser["Browser UI (Solid)"]
+    Backend["Backend API (Express on Bun)"]
+    DB["PostgreSQL (Drizzle ORM)"]
+    Workflow["Workflow Provider (n8n/others)"]
+    LLM["LLM Providers"]
 
-    Browser -- "POST /api/chat/threads/:id/messages" --> Backend
-    Browser -- "GET /api/notifications/stream (SSE)" --> Backend
-    Backend -- "Intent parsing" --> LLM
-    Backend -- "CRUD" --> DB
-    Backend -- "POST webhook" --> N8N
-    N8N -- "POST /api/webhooks/n8n<br/>(results / errors)" --> Backend
-    N8N -- "POST /api/approvals<br/>(halt for human input)" --> Backend
+    Browser -->|/api/chat/*| Backend
+    Browser -->|/api/workflows/*| Backend
+    Browser -->|/api/notifications/stream| Backend
+
+    Backend --> DB
+    Backend --> LLM
+    Backend -->|trigger| Workflow
+    Workflow -->|callback/webhook| Backend
 ```
 
----
+## Backend Request Paths
 
-## Core Request Flows
+### Chat (non-streaming)
 
-### 1. Normal Chat Message (No Workflow)
+1. Save user message + attachment links
+2. Run `AgentService.handleIncomingMessage(...)`
+3. On failure, fallback to `OrchestratorService.handleIncomingMessage(...)`
+4. Persist assistant message blocks
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Frontend
-    participant Backend
-    participant LLM
+### Chat (streaming SSE)
 
-    User->>Frontend: Types message
-    Frontend->>Backend: POST /api/chat/threads/:id/messages
-    Backend->>Backend: Persist user message to DB
-    Backend->>LLM: parseIntent(message, workflows[])
-    LLM-->>Backend: { type: "chat", reply: "..." }
-    Backend->>Backend: Persist assistant reply to DB
-    Backend-->>Frontend: { userMessage, assistantReply }
-    Frontend->>User: Renders reply bubble
-```
+1. Open SSE stream
+2. Persist user message
+3. Emit `thinking` + block/chunk events
+4. Attempt `AgentService.handleStreamingMessage(...)`
+5. On failure, fallback to `OrchestratorService.handleStreamingMessage(...)`
+6. Emit `complete` + close stream
 
-### 2. Workflow Trigger
+### Workflow execution
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Frontend
-    participant Backend
-    participant DB
-    participant N8N
+1. Resolve workflow config and permissions
+2. Create run record
+3. Dispatch provider request
+4. Receive callback (`/api/webhooks/n8n` or `/api/webhooks/callback`)
+5. Update run + notify thread or notification inbox
 
-    User->>Frontend: "Scan my emails" 
-    Frontend->>Backend: POST /api/chat/threads/:id/messages
-    Backend->>DB: parseIntent → workflow match
-    Backend->>DB: Create workflow_run (status=running)
-    Backend->>N8N: POST webhook (payload + _meta)
-    Backend-->>Frontend: { assistantReply (workflow_card block) }
-    N8N-->>Backend: POST /api/webhooks/n8n { type:"completed", runId }
-    Backend->>DB: Update run status → completed
-    Backend->>SSE: Emit WORKFLOW_RUN_UPDATED
-    Frontend->>User: Live card updates to "Completed ✓"
-```
+### Approval flow
 
-### 3. Approval Flow
+1. Workflow posts approval request to `/api/approvals`
+2. Approval stored with `pending` state
+3. User resolves via `/api/approvals/:id/resolve`
+4. Workflow continues on provider side
 
-```mermaid
-sequenceDiagram
-    participant N8N
-    participant Backend
-    participant Frontend
-    participant User
+## Security Architecture
 
-    N8N->>Backend: POST /api/approvals { runId, summary }
-    Backend->>DB: Insert approval (status=pending), run→waiting_approval
-    Backend->>SSE: Emit WORKFLOW_APPROVAL_REQUESTED
-    Frontend->>User: Approval card appears in UI
-    User->>Frontend: Clicks "Approve"
-    Frontend->>Backend: POST /api/approvals/:id/resolve { status:"approved" }
-    Backend->>DB: Update approval → resolved
-    Backend->>SSE: Emit WORKFLOW_RUN_UPDATED
-    Note over Backend,N8N: n8n resumes via its own Wait Node resume URL
-```
+Global middleware stack (from `apps/backend/src/index.ts`):
 
----
+- `cors`
+- JSON body limit
+- security headers middleware
+- auth middleware
+- CSRF middleware
+- rate-limit middleware
+- trace middleware
 
-## Technology Decisions
+Route-level protections:
 
-| Concern | Choice | Reason |
-|---|---|---|
-| Frontend | SolidStart + SolidJS | Fine-grained reactivity; SSR + client hydration |
-| Backend | Bun + Express | Fast runtime; familiar HTTP API layer |
-| Database | PostgreSQL + Drizzle | Typed, migration-first ORM |
-| Realtime | Server-Sent Events | Simpler than WebSockets; sufficient for 1-user app |
-| Workflow Engine | n8n (external) | No-code builder; webhook-native |
-| LLM | Pluggable (Ollama default) | Works offline; upgradeable to cloud |
-| PWA | Service Worker (cache-first) | Installable + offline-safe |
+- Auth-required mounts: `/api/chat`, `/api/workflows`, `/api/workflow-runs`, `/api/notifications`, `/api/settings`
+- Webhook secret required: `/api/webhooks/*`
+- Approvals create endpoint allows auth user or webhook secret
 
----
+## Runtime Config Architecture
 
-## Directory Structure
+- Config source: `${AUTOPILOT_HOME}/config.json` (or `~/.autopilot/config.json`)
+- Parsed and validated via Zod in `runtime.config.ts`
+- Merges file + env with strict runtime validation
 
-```
-chat-automation-platform/
-├── apps/
-│   ├── frontend/           # SolidStart PWA
-│   │   ├── public/         # manifest.json, sw.js, icons/
-│   │   └── src/
-│   │       ├── components/ # UI components (layout, chat, ui)
-│   │       ├── routes/     # File-based pages
-│   │       └── app.tsx     # Root shell with ErrorBoundary + meta
-│   └── backend/            # Bun + Express orchestrator
-│       ├── src/
-│       │   ├── db/         # Schema, migrations, seed
-│       │   ├── middleware/  # trace, error, validate, webhook auth
-│       │   ├── providers/llm/ # ILLMProvider, Ollama, Gemini
-│       │   ├── repositories/  # Drizzle queries per domain
-│       │   ├── routes/        # Express routers
-│       │   ├── schemas/       # Zod validation schemas
-│       │   └── services/      # Business logic layer
-│       └── docs/           # n8n-contract.md, model-policy.md
-└── packages/
-    └── shared/             # Domain types shared between apps
+## Frontend Architecture
+
+- Solid app with route-based screens (`apps/frontend/src/routes/*`)
+- Chat renderer (`components/chat/*`) renders block types such as:
+  - `summary`
+  - `detail_toggle`
+  - `markdown` / `text`
+  - `email_draft`
+  - `question_mcq`
+  - `source`
+- SSE streaming integration for real-time assistant output
+
+## Deployment Topology
+
+Current production Docker setup:
+
+- single backend process in container
+- frontend built as static output and served by backend (`FRONTEND_STATIC_DIR`)
+- backend exposed on port `3000`
+
+## Directory Map (Operational)
+
+```text
+apps/
+  backend/
+    src/
+      config/        runtime config
+      db/            schema + migration tooling + integrity tools
+      middleware/    auth/csrf/rate-limit/security/trace/error
+      providers/     llm + workflow provider adapters
+      repositories/  persistence
+      routes/        API endpoints
+      services/      orchestration + domain logic
+    test/            config/middleware/services/e2e
+  frontend/
+    src/
+      components/    chat + layout + settings + ui
+      routes/        pages/views
+packages/
+  shared/
+    src/             shared DTO/contracts
 ```

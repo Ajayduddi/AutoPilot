@@ -1,3 +1,8 @@
+/**
+ * @fileoverview schemas/webhook.schema.
+ *
+ * Zod schemas that define and validate API request contracts.
+ */
 import { z } from 'zod';
 
 /** n8n-specific callback schema (backward-compatible) */
@@ -20,6 +25,10 @@ export const unifiedCallbackSchema = z.object({
     result: z.record(z.string(), z.any()).nullable().optional(),
     raw: z.record(z.string(), z.any()).nullable().optional(),
     error: z.record(z.string(), z.any()).nullable().optional(),
+    summary: z.string().optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    nextSuggestedAction: z.string().optional(),
+    planStepId: z.string().optional(),
     meta: z.record(z.string(), z.any()).optional(),
   }),
 });

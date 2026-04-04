@@ -1,11 +1,16 @@
+/**
+ * @fileoverview providers/workflow/zapier.adapter.
+ *
+ * External provider adapters and interfaces for LLMs and workflow engines.
+ */
 import type {
   Workflow,
   WorkflowExecutionRequest,
   WorkflowExecutionResult,
   ProviderCapabilities,
   WorkflowProvider,
-} from '@chat-automation/shared';
-import { PROVIDER_CAPABILITIES } from '@chat-automation/shared';
+} from '@autopilot/shared';
+import { PROVIDER_CAPABILITIES } from '@autopilot/shared';
 import { BaseWebhookAdapter } from './base.adapter';
 import type { WorkflowProviderAdapter } from './provider.interface';
 import type { NormalizedProviderResult, ValidationResult } from './types';
@@ -24,12 +29,21 @@ import type { NormalizedProviderResult, ValidationResult } from './types';
 //  - No health check
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * Workflow adapter for Zapier Catch Hook/Webhook endpoints.
+ *
+ * @example
+ * ```typescript
+ * const adapter = new ZapierAdapter();
+ * const result = await adapter.triggerWorkflow(workflow, request);
+ * ```
+ */
 export class ZapierAdapter extends BaseWebhookAdapter implements WorkflowProviderAdapter {
-  readonly name: WorkflowProvider = 'zapier';
-  readonly capabilities: ProviderCapabilities = PROVIDER_CAPABILITIES.zapier;
+    readonly name: WorkflowProvider = 'zapier';
+    readonly capabilities: ProviderCapabilities = PROVIDER_CAPABILITIES.zapier;
 
-  async validateConfig(workflow: Workflow): Promise<ValidationResult> {
-    const base = await super.validateConfig(workflow);
+    async validateConfig(workflow: Workflow): Promise<ValidationResult> {
+        const base = await super.validateConfig(workflow);
 
     if (workflow.executionEndpoint && !workflow.executionEndpoint.includes('hooks.zapier.com')) {
       base.warnings.push('Zapier endpoint does not appear to be a hooks.zapier.com URL — verify it is correct');
@@ -42,11 +56,11 @@ export class ZapierAdapter extends BaseWebhookAdapter implements WorkflowProvide
     workflow: Workflow,
     request: WorkflowExecutionRequest,
   ): Promise<WorkflowExecutionResult> {
-    const endpoint = workflow.executionEndpoint!;
-    const startedAt = new Date().toISOString();
+        const endpoint = workflow.executionEndpoint!;
+        const startedAt = new Date().toISOString();
 
     // Zapier expects a flat JSON body; we nest our metadata in a _meta key
-    const payload = {
+        const payload = {
       ...request.input,
       _meta: {
         traceId: request.traceId,
@@ -57,15 +71,15 @@ export class ZapierAdapter extends BaseWebhookAdapter implements WorkflowProvide
       },
     };
 
-    const authHeaders = this.buildAuthHeaders(workflow);
+        const authHeaders = this.buildAuthHeaders(workflow);
 
     try {
-      let data: unknown;
-      const headers = { ...authHeaders, 'x-trace-id': request.traceId };
+            let data: unknown;
+            const headers = { ...authHeaders, 'x-trace-id': request.traceId };
 
       switch (workflow.httpMethod) {
         case 'GET': {
-          const queryParams = {
+                    const queryParams = {
             ...request.input,
             _traceId: request.traceId,
             _workflowKey: request.workflowKey,
@@ -90,7 +104,7 @@ export class ZapierAdapter extends BaseWebhookAdapter implements WorkflowProvide
           break;
       }
 
-      const normalized = this.normalizeResponse(data, workflow);
+            const normalized = this.normalizeResponse(data, workflow);
 
       return {
         runId: request.traceId,
@@ -103,13 +117,13 @@ export class ZapierAdapter extends BaseWebhookAdapter implements WorkflowProvide
         error: null,
         meta: {
           startedAt,
-          finishedAt: normalized.status === 'completed' ? new Date().toISOString() : null,
+                    finishedAt: normalized.status === 'completed' ? new Date().toISOString() : null,
           triggerSource: request.source,
           providerRunId: normalized.providerRunId,
         },
       };
     } catch (err) {
-      const normalized = this.normalizeError(err, workflow);
+            const normalized = this.normalizeError(err, workflow);
       return {
         runId: request.traceId,
         workflowKey: request.workflowKey,
@@ -137,9 +151,9 @@ export class ZapierAdapter extends BaseWebhookAdapter implements WorkflowProvide
    * unless we detect actual result data.
    */
   normalizeResponse(raw: unknown, _workflow: Workflow): NormalizedProviderResult {
-    const rawObj = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+        const rawObj = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
 
-    const isAck = rawObj.status === 'success' && !rawObj.data && !rawObj.result;
+        const isAck = rawObj.status === 'success' && !rawObj.data && !rawObj.result;
 
     return {
       status: isAck ? 'running' : 'completed',
@@ -153,7 +167,7 @@ export class ZapierAdapter extends BaseWebhookAdapter implements WorkflowProvide
         items: [],
       },
       raw: rawObj,
-      providerRunId: typeof rawObj.id === 'string' ? rawObj.id
+            providerRunId: typeof rawObj.id === 'string' ? rawObj.id
         : typeof rawObj.request_id === 'string' ? rawObj.request_id
         : null,
     };

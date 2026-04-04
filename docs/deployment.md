@@ -1,222 +1,158 @@
-# AutoPilot — Deployment Guide
+# AutoPilot Deployment Guide (Current)
+
+This document reflects the current repository state.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) ≥ 1.0
-- PostgreSQL (local or hosted)
-- n8n (self-hosted or cloud) — optional for local dev
-- Node ≥ 18 (for some tooling)
+- Bun 1.x
+- PostgreSQL 16+ (or compatible managed Postgres)
+- n8n (optional for local dev; required for n8n-backed workflows)
 
----
+## 1) Environment Setup
 
-## 1. Environment Setup
-
-Copy the example and fill in values:
 ```bash
 cp .env.example .env
 ```
 
-### Root `.env` variables
+Minimum required in production:
+
+- `NODE_ENV=production`
+- `DATABASE_URL`
+- `AUTH_COOKIE_SECRET` (strong value, not default)
+- `FRONTEND_ORIGIN`
+- `PROVIDER_API_KEY_ENCRYPTION_KEY` (>= 32 chars)
+
+Key runtime env vars:
+
+- `PORT` (default `3000`)
+- `AUTOPILOT_HOME` (runtime home; default is `$HOME/.autopilot` if not set)
+- `CALLBACK_BASE_URL` (public backend URL used for callback links)
+- `WEBHOOK_CALLBACK_SECRET` (fallback callback secret)
+- `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (for push notifications)
+
+## 2) Runtime Config (`config.json`)
+
+Runtime config is read from:
+
+- `${AUTOPILOT_HOME}/config.json`
+- if `AUTOPILOT_HOME` is unset: `~/.autopilot/config.json`
+
+Important keys:
+
+- `approvalMode`: `"default"` | `"auto"`
+- `forceInteractiveQuestions`: boolean
+- `uploadDir`: string
+- `DEFAULT_TIMEZONE`
+- `OLLAMA_URL`
+- `CONTEXT_MODE_*`
+- `MAX_UPLOAD_MB`, `MAX_FILES_PER_MESSAGE`, `ALLOWED_MIME_TYPES`
+- `AGENT_RUNTIME_*`
+- `LLM_*` timeout keys
+- `AUTO_ROUTER_*` breaker keys
+- `ATTACHMENT_SCAN_*`
+- `METRICS_*`
+- `FEATURE_TYPED_CONTRACTS`, `FEATURE_STRUCTURED_LOGGING`
+
+Reference implementation: `apps/backend/src/config/runtime.config.ts`
+
+## 3) Database Workflow (Safe)
+
+From `apps/backend`:
 
 ```bash
-# ─── Database ───────────────────────────────
-DATABASE_URL=postgresql://user:password@localhost:5432/autopilot
-
-# ─── Backend ────────────────────────────────
-PORT=3000
-NODE_ENV=development
-FRONTEND_ORIGIN=http://localhost:5173
-
-# ─── Authentication / Sessions ──────────────
-AUTH_COOKIE_SECRET=change-this-secret
-SESSION_TTL_DAYS=14
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
-
-# ─── Provider Callback Security ─────────────
-# Optional fallback secret. Preferred approach:
-# generate callback keys in Settings > Webhook Callbacks.
-WEBHOOK_CALLBACK_SECRET=your_strong_secret_here
-
-# Public base URL for callback links emitted to providers
-CALLBACK_BASE_URL=http://localhost:3000
-
-# Optional: used only by seed script for sample n8n workflows
-N8N_WEBHOOK_URL=http://localhost:5678/webhook
-
-# ─── LLM Provider (Ollama default) ──────────
-OLLAMA_URL=http://localhost:11434
-
-# ─── Optional: Cloud LLM keys ───────────────
-# GEMINI_API_KEY=your_gemini_key
-# GROQ_API_KEY=your_groq_key
-# MISTRAL_API_KEY=your_mistral_key
+bun run db:preflight
+bun run db:repair:analyze   # if preflight reports blocking issues
+bun run db:repair:apply     # only after review
+bun run db:generate         # when schema changed
+bun run db:migrate
 ```
 
----
+Notes:
 
-## 2. Database Setup
+- `db:push` is local/dev convenience and blocked in production mode.
+- Keep snapshots/backups before destructive repair/migration steps.
+
+## 4) Local Development
+
+From repo root:
 
 ```bash
-# Generate migrations from schema (when schema changes)
-cd apps/backend
-bun run db:generate
-
-# Apply schema to DB
-bun run db:push
-
-# Seed development data (admin user + sample workflows)
-bun run db:seed
-```
-
----
-
-## 3. Running Locally
-
-From the monorepo root:
-```bash
+bun install
 bun run dev
 ```
-This starts both:
-- **Frontend** → http://localhost:5173
-- **Backend** → http://localhost:3000
 
-Verify the backend is healthy:
+Default local URLs:
+
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:3000`
+- Health: `http://localhost:3000/health`
+- Readiness: `http://localhost:3000/health/ready`
+
+## 5) Production Container (Single Process)
+
+Current Docker runtime is backend-only process with static frontend served by backend.
+
+Build:
+
 ```bash
-curl http://localhost:3000/health
+docker build -t autopilot:0.1.0 .
 ```
 
-First run uses onboarding:
-- open `http://localhost:5173/onboarding`
-- create the owner account
-- sign-up is locked after first account (single-user mode)
+Run:
 
----
-
-## 4. Provider Webhook Wiring
-
-Execution endpoints are configured per workflow when you create/edit workflows.
-Use the callback endpoints below for providers to send run status/results back to this platform.
-
-### Triggering workflows (per workflow endpoint)
-Configure each n8n workflow with a **Webhook** trigger node:
-- Method: `POST`
-- Path: e.g. `/create-task`
-- The orchestrator will send:
-```json
-{
-  "_meta": { "runId": "...", "workflowKey": "...", "userId": "<current_user_id>" },
-  "text": "user-provided content"
-}
+```bash
+docker run -d \
+  --name autopilot-0-1-0 \
+  -p 3000:3000 \
+  --env-file .env \
+  autopilot:0.1.0
 ```
 
-### Sending results back
-At the end of each n8n workflow, add an **HTTP Request** node:
-- URL: `http://your-backend:3000/api/webhooks/n8n`
-- Method: `POST`
-- Header: `x-webhook-secret: <generated_callback_key>`
-- Alternative header (backward-compatible): `x-n8n-secret`
+Container behavior:
+
+- Backend listens on `:3000`
+- `FRONTEND_STATIC_DIR=/app/public` (set in Dockerfile)
+- Frontend static assets are served by backend
+
+## 6) Webhook & Callback Integration
+
+### n8n callback (legacy compatible)
+
+- Endpoint: `POST /api/webhooks/n8n`
+- Required header: `x-webhook-secret` (or legacy `x-n8n-secret`)
 - Body:
+
 ```json
 {
   "type": "completed",
-  "runId": "{{ $json._meta.runId }}",
-  "result": { ... }
+  "runId": "run_123",
+  "result": {}
 }
 ```
 
-### Unified callback (non-n8n or custom adapters)
-- URL: `http://your-backend:3000/api/webhooks/callback`
-- Method: `POST`
-- Header: `x-webhook-secret: <generated_callback_key>`
-- Body shape: `traceId`, `workflowKey`, `provider`, `status`, `result/raw/error`
+### Unified callback (recommended)
 
-Example:
-```bash
-curl -X POST "http://localhost:3000/api/webhooks/callback" \
-  -H "Content-Type: application/json" \
-  -H "x-webhook-secret: whsec_your_generated_key_here" \
-  -d '{
-    "traceId": "trace_123",
-    "workflowKey": "wf_portfolio",
-    "provider": "n8n",
-    "status": "completed",
-    "result": { "message": "done" },
-    "raw": { "providerRunId": "abc123" }
-  }'
-```
+- Endpoint: `POST /api/webhooks/callback`
+- Required header: `x-webhook-secret`
+- Body (typical):
 
-Legacy n8n callback example:
-```bash
-curl -X POST "http://localhost:3000/api/webhooks/n8n" \
-  -H "Content-Type: application/json" \
-  -H "x-webhook-secret: whsec_your_generated_key_here" \
-  -d '{
-    "type": "completed",
-    "runId": "run_123",
-    "result": { "message": "done" }
-  }'
-```
-
-### Requesting human approval (optional)
-To pause a workflow for user approval, add an **HTTP Request** node before the sensitive step:
-- URL: `http://your-backend:3000/api/approvals`
-- Method: `POST`
-- Body:
 ```json
 {
-  "runId": "{{ $json._meta.runId }}",
-  "userId": "<current_user_id>",
-  "summary": "Please confirm: delete 3 archived emails",
-  "details": {}
+  "traceId": "trace_123",
+  "workflowKey": "wf_portfolio",
+  "provider": "n8n",
+  "status": "completed",
+  "result": {},
+  "raw": {}
 }
 ```
-Then add a **Wait** node. When the user approves via the UI, n8n resumes from the Wait node's resume URL.
 
----
+## 7) Production Checklist
 
-## 5. Adding a New Workflow
-
-1. Create the workflow in n8n and copy its webhook URL
-2. Run the seed script or insert directly:
-```sql
-INSERT INTO workflows (id, key, name, description, provider, visibility, trigger_method, execution_endpoint, enabled)
-VALUES (
-  'wf_my_flow_id',
-  'wf_my_flow',
-  'My New Flow',
-  'What it does',
-  'n8n',
-  'public',
-  'webhook',
-  'http://n8n/webhook/my-flow',
-  true
-);
-```
-3. The orchestrator's LLM parser will now propose this workflow when user intent matches
-
----
-
-## 6. Switching AI Provider
-
-Update the `provider_configs` table:
-```sql
--- Set Gemini as default
-UPDATE provider_configs SET is_default = false;
-INSERT INTO provider_configs (id, provider, model, api_key, is_default)
-VALUES ('cfg_gemini', 'gemini', 'gemini-1.5-flash', 'your_api_key', true);
-```
-The `LLMFactory` auto-reads this on each request — no restart needed.
-
----
-
-## 7. Production Checklist
-
-- [ ] Set `NODE_ENV=production`
-- [ ] Generate callback keys in Settings and store them in your provider securely
-- [ ] (Optional fallback) set a strong `WEBHOOK_CALLBACK_SECRET`
-- [ ] Serve behind a reverse proxy (nginx/caddy) with HTTPS
-- [ ] Point `DATABASE_URL` to a managed Postgres instance
-- [ ] Generate real PWA icons (192x192 and 512x512 PNGs) in `public/icons/`
-- [ ] Set n8n webhook URLs to the public backend domain
+- [ ] Required production env vars set and strong
+- [ ] HTTPS + reverse proxy configured
+- [ ] DB preflight/repair/migrate completed
+- [ ] Callback secrets configured (DB-generated keys preferred)
+- [ ] `CALLBACK_BASE_URL` points to public backend URL
+- [ ] Push VAPID keys configured if notifications are needed
+- [ ] `/health` and `/health/ready` both healthy post-deploy

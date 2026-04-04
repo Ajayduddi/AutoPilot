@@ -1,4 +1,9 @@
-import type { Workflow, WorkflowExecutionRequest, WorkflowExecutionResult } from '@chat-automation/shared';
+/**
+ * @fileoverview providers/workflow/base.adapter.
+ *
+ * External provider adapters and interfaces for LLMs and workflow engines.
+ */
+import type { Workflow, WorkflowExecutionRequest, WorkflowExecutionResult } from '@autopilot/shared';
 import type { WorkflowProviderAdapter } from './provider.interface';
 import type {
   NormalizedProviderResult,
@@ -6,6 +11,7 @@ import type {
   ValidationResult,
   HealthCheckResult,
 } from './types';
+import { assertSafeOutboundUrl } from '../../util/network-safety';
 
 // ─────────────────────────────────────────────────────────────
 //  Base Webhook Adapter
@@ -15,6 +21,9 @@ import type {
 //  Concrete adapters extend this and can override any method.
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * BaseWebhookAdapter class.
+ */
 export abstract class BaseWebhookAdapter implements Pick<
   WorkflowProviderAdapter,
   'validateConfig' | 'triggerWorkflow' | 'normalizeResponse' | 'normalizeError'
@@ -32,29 +41,29 @@ export abstract class BaseWebhookAdapter implements Pick<
    * Override in subclass if the provider needs special handling.
    */
   protected buildAuthHeaders(workflow: Workflow): Record<string, string> {
-    const headers: Record<string, string> = {};
+        const headers: Record<string, string> = {};
 
     switch (workflow.authType) {
       case 'bearer': {
-        const token = this.resolveSecret(workflow.authConfig, 'token', 'tokenRef');
+                const token = this.resolveSecret(workflow.authConfig, 'token', 'tokenRef');
         if (token) headers['Authorization'] = `Bearer ${token}`;
         break;
       }
       case 'api_key': {
-        const key = this.resolveSecret(workflow.authConfig, 'apiKey', 'apiKeyRef');
-        const headerName = (workflow.authConfig?.headerName as string) || 'X-API-Key';
+                const key = this.resolveSecret(workflow.authConfig, 'apiKey', 'apiKeyRef');
+                const headerName = (workflow.authConfig?.headerName as string) || 'X-API-Key';
         if (key) headers[headerName] = key;
         break;
       }
       case 'header_secret': {
-        const secret = this.resolveSecret(workflow.authConfig, 'secret', 'secretRef');
-        const headerName = (workflow.authConfig?.headerName as string) || 'X-Webhook-Secret';
+                const secret = this.resolveSecret(workflow.authConfig, 'secret', 'secretRef');
+                const headerName = (workflow.authConfig?.headerName as string) || 'X-Webhook-Secret';
         if (secret) headers[headerName] = secret;
         break;
       }
       case 'custom': {
         // Custom auth: merge all headers from authConfig.headers
-        const customHeaders = workflow.authConfig?.headers as Record<string, string> | undefined;
+                const customHeaders = workflow.authConfig?.headers as Record<string, string> | undefined;
         if (customHeaders) Object.assign(headers, customHeaders);
         break;
       }
@@ -93,25 +102,29 @@ export abstract class BaseWebhookAdapter implements Pick<
     init: RequestInit,
     timeoutMs: number,
   ): Promise<{ status: number; data: unknown; raw: string }> {
-    let lastError: Error | undefined;
+        const safeUrl = assertSafeOutboundUrl(url, {
+      allowPrivateLocalInDev: true,
+      requireHttpsInProd: true,
+    }).toString();
+        let lastError: Error | undefined;
 
     for (let attempt = 0; attempt <= BaseWebhookAdapter.MAX_RETRIES; attempt++) {
       if (attempt > 0) {
-        const delay = BaseWebhookAdapter.RETRY_DELAYS[attempt - 1] ?? 4000;
+                const delay = BaseWebhookAdapter.RETRY_DELAYS[attempt - 1] ?? 4000;
         console.log(`[WebhookAdapter] Retry ${attempt}/${BaseWebhookAdapter.MAX_RETRIES} after ${delay}ms...`);
         await new Promise(r => setTimeout(r, delay));
       }
 
-      console.log(`[WebhookAdapter] ${init.method} → ${url}`);
-      const response = await fetch(url, {
+      console.log(`[WebhookAdapter] ${init.method} → ${safeUrl}`);
+            const response = await fetch(safeUrl, {
         ...init,
         signal: AbortSignal.timeout(timeoutMs),
       });
 
-      const rawText = await response.text();
+            const rawText = await response.text();
       console.log(`[WebhookAdapter] Response: ${response.status} ${response.statusText}`);
 
-      let data: unknown;
+            let data: unknown;
       try {
         data = JSON.parse(rawText);
       } catch {
@@ -123,7 +136,7 @@ export abstract class BaseWebhookAdapter implements Pick<
         lastError = Object.assign(new Error(`Provider responded with HTTP ${response.status}`), {
           httpStatus: response.status,
           responseBody: data,
-          requestUrl: url,
+          requestUrl: safeUrl,
         });
         continue;
       }
@@ -132,7 +145,7 @@ export abstract class BaseWebhookAdapter implements Pick<
         throw Object.assign(new Error(`Provider responded with HTTP ${response.status}`), {
           httpStatus: response.status,
           responseBody: data,
-          requestUrl: url,
+          requestUrl: safeUrl,
         });
       }
 
@@ -171,7 +184,7 @@ export abstract class BaseWebhookAdapter implements Pick<
     queryParams?: Record<string, unknown>,
     timeoutMs = 30_000,
   ): Promise<{ status: number; data: unknown; raw: string }> {
-    const targetUrl = new URL(url);
+        const targetUrl = new URL(url);
     if (queryParams) {
       for (const [k, v] of Object.entries(queryParams)) {
         if (v !== undefined && v !== null) targetUrl.searchParams.set(k, String(v));
@@ -233,17 +246,20 @@ export abstract class BaseWebhookAdapter implements Pick<
 
   // ── Validation helpers ──────────────────────────────────────
 
-  async validateConfig(workflow: Workflow): Promise<ValidationResult> {
-    const errors: string[] = [];
-    const warnings: string[] = [];
+    async validateConfig(workflow: Workflow): Promise<ValidationResult> {
+        const errors: string[] = [];
+        const warnings: string[] = [];
 
     if (!workflow.executionEndpoint) {
       errors.push('Execution endpoint URL is required');
     } else {
       try {
-        new URL(workflow.executionEndpoint);
+        assertSafeOutboundUrl(workflow.executionEndpoint, {
+          allowPrivateLocalInDev: true,
+          requireHttpsInProd: true,
+        });
       } catch {
-        errors.push('Execution endpoint is not a valid URL');
+        errors.push('Execution endpoint is invalid or blocked by outbound URL policy');
       }
     }
 
@@ -256,27 +272,27 @@ export abstract class BaseWebhookAdapter implements Pick<
 
   // ── Normalization ───────────────────────────────────────────
 
-  normalizeResponse(raw: unknown, _workflow: Workflow): NormalizedProviderResult {
-    const rawObj = (typeof raw === 'object' && raw !== null ? raw : { value: raw }) as Record<string, unknown>;
+    normalizeResponse(raw: unknown, _workflow: Workflow): NormalizedProviderResult {
+        const rawObj = (typeof raw === 'object' && raw !== null ? raw : { value: raw }) as Record<string, unknown>;
     return {
       status: 'completed',
       result: {
-        summary: typeof rawObj.message === 'string' ? rawObj.message : 'Workflow completed',
+                summary: typeof rawObj.message === 'string' ? rawObj.message : 'Workflow completed',
         data: rawObj,
         items: Array.isArray(rawObj.items) ? rawObj.items : [],
       },
       raw: rawObj,
-      providerRunId: typeof rawObj.runId === 'string' ? rawObj.runId
+            providerRunId: typeof rawObj.runId === 'string' ? rawObj.runId
         : typeof rawObj.id === 'string' ? rawObj.id
         : null,
     };
   }
 
-  normalizeError(error: unknown, _workflow: Workflow): NormalizedProviderError {
-    const errObj = error as Record<string, unknown> | Error;
-    const message = errObj instanceof Error ? errObj.message : String(errObj);
-    const code = (errObj as any)?.httpStatus ? String((errObj as any).httpStatus) : null;
-    const details = (errObj as any)?.responseBody ?? null;
+    normalizeError(error: unknown, _workflow: Workflow): NormalizedProviderError {
+        const errObj = error as Record<string, unknown> | Error;
+        const message = errObj instanceof Error ? errObj.message : String(errObj);
+        const code = (errObj as any)?.httpStatus ? String((errObj as any).httpStatus) : null;
+        const details = (errObj as any)?.responseBody ?? null;
 
     return {
       status: 'failed',
@@ -287,13 +303,17 @@ export abstract class BaseWebhookAdapter implements Pick<
 
   // ── Health check ────────────────────────────────────────────
 
-  async healthCheck(workflow: Workflow): Promise<HealthCheckResult> {
+    async healthCheck(workflow: Workflow): Promise<HealthCheckResult> {
     if (!workflow.executionEndpoint) {
       return { healthy: false, latencyMs: 0, message: 'No execution endpoint configured' };
     }
-    const start = Date.now();
+        const start = Date.now();
     try {
-      const res = await fetch(workflow.executionEndpoint, {
+            const endpoint = assertSafeOutboundUrl(workflow.executionEndpoint, {
+        allowPrivateLocalInDev: true,
+        requireHttpsInProd: true,
+      });
+            const res = await fetch(endpoint.toString(), {
         method: 'HEAD',
         signal: AbortSignal.timeout(10_000),
       });

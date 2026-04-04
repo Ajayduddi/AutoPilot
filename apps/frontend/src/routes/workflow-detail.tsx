@@ -2,6 +2,7 @@ import { Title } from "@solidjs/meta";
 import { useParams, useNavigate } from "@solidjs/router";
 import { createResource, createSignal, For, Show, onMount, onCleanup } from "solid-js";
 import { workflowsApi, notificationsApi } from "../lib/api";
+import { useMobileMenu } from "../context/mobile-menu.context";
 import { Button } from "../components/ui/Button";
 import { CustomSelect } from "../components/ui/CustomSelect";
 import {
@@ -12,7 +13,6 @@ import {
   triggerMethodOptions as triggerMethodSelectOptions,
   visibilityOptions as visibilitySelectOptions,
 } from "../lib/workflow-form-options";
-
 const providerNotes: Record<string, string> = {
   n8n: "Supports deep execution tracing, sub-workflows, and complex polling.",
   zapier: "Broadest app ecosystem. Best for simple A-to-B automations.",
@@ -20,7 +20,6 @@ const providerNotes: Record<string, string> = {
   custom: "Internal code execution via webhooks.",
   sim: "Simulated environment for local testing without external API calls.",
 };
-
 const statusColors: Record<string, string> = {
   completed: "text-emerald-400",
   running: "text-blue-400",
@@ -28,7 +27,6 @@ const statusColors: Record<string, string> = {
   queued: "text-neutral-300",
   waiting_approval: "text-amber-400",
 };
-
 const statusDots: Record<string, string> = {
   completed: "bg-emerald-500",
   running: "bg-blue-500 animate-pulse",
@@ -41,6 +39,7 @@ const statusDots: Record<string, string> = {
 export default function WorkflowDetail() {
   const params = useParams();
   const navigate = useNavigate();
+  const mobileMenu = useMobileMenu();
   const [workflow, { refetch: refetchWorkflow }] = createResource(() => params.id, (id) => workflowsApi.getById(id));
   const [runs, { refetch: refetchRuns }] = createResource(
     () => params.id,
@@ -81,7 +80,6 @@ export default function WorkflowDetail() {
     outputSchemaJson: "{}",
     tags: "",
   });
-
   let sse: EventSource | undefined;
 
   onMount(() => {
@@ -100,6 +98,20 @@ export default function WorkflowDetail() {
 
   onCleanup(() => sse?.close());
 
+  /**
+   * Utility function to handle trigger.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from handleTrigger.
+   *
+   * @example
+   * ```typescript
+   * const output = handleTrigger();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleTrigger() {
     setTriggering(true);
     setTriggerResult(null);
@@ -118,6 +130,20 @@ export default function WorkflowDetail() {
     }
   }
 
+  /**
+   * Utility function to open edit form.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from openEditForm.
+   *
+   * @example
+   * ```typescript
+   * const output = openEditForm();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   function openEditForm() {
     const wf = workflow() as any;
     if (!wf) return;
@@ -149,6 +175,20 @@ export default function WorkflowDetail() {
     setShowEditForm(true);
   }
 
+  /**
+   * Utility function to handle save edit.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from handleSaveEdit.
+   *
+   * @example
+   * ```typescript
+   * const output = handleSaveEdit();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleSaveEdit() {
     setSavingEdit(true);
     setEditError(null);
@@ -162,7 +202,6 @@ export default function WorkflowDetail() {
         setEditError("Key is required");
         return;
       }
-
       let inputSchema: any = null;
       let outputSchema: any = null;
       try {
@@ -177,7 +216,6 @@ export default function WorkflowDetail() {
         setEditError("Output Schema must be valid JSON");
         return;
       }
-
       let authConfig: Record<string, any> | null = null;
       switch (form.authType) {
         case "bearer":
@@ -211,7 +249,6 @@ export default function WorkflowDetail() {
         default:
           authConfig = null;
       }
-
       const payload: Record<string, any> = {
         key: form.key.trim(),
         name: form.name.trim(),
@@ -245,6 +282,20 @@ export default function WorkflowDetail() {
     }
   }
 
+  /**
+   * Utility function to handle delete workflow.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from handleDeleteWorkflow.
+   *
+   * @example
+   * ```typescript
+   * const output = handleDeleteWorkflow();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleDeleteWorkflow() {
     setDeleting(true);
     setEditError(null);
@@ -259,6 +310,21 @@ export default function WorkflowDetail() {
     }
   }
 
+  /**
+   * Utility function to load run detail.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param runId - Input value for loadRunDetail.
+   * @returns Return value from loadRunDetail.
+   *
+   * @example
+   * ```typescript
+   * const output = loadRunDetail(value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function loadRunDetail(runId: string) {
     if (expandedRun() === runId) {
       setExpandedRun(null);
@@ -273,7 +339,6 @@ export default function WorkflowDetail() {
       setRunDetail({ error: "Failed to load run details" });
     }
   }
-
   const formatDate = (d: string | null) => {
     if (!d) return "—";
     return new Date(d).toLocaleString();
@@ -301,9 +366,13 @@ export default function WorkflowDetail() {
               </div>
             }>
               {(wf) => (
-                <div class="flex items-start justify-between gap-4">
-                  <div>
-                    <div class="flex items-center gap-2.5">
+                <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                  <div class="flex items-start gap-3">
+                    <button onClick={() => mobileMenu.toggle()} class="md:hidden p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800/50 flex shrink-0 h-8 w-8 items-center justify-center -ml-2 -mt-1">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                    </button>
+                    <div>
+                      <div class="flex flex-wrap items-center gap-2.5">
                       <h1 class="page-title">{(wf() as any).name}</h1>
                       <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800/70 border border-slate-600/35 text-slate-100">
                         {providerLabels[(wf() as any).provider] || (wf() as any).provider}
@@ -320,8 +389,9 @@ export default function WorkflowDetail() {
                       <p class="text-sm text-slate-200 mt-2 max-w-2xl leading-relaxed">{(wf() as any).description}</p>
                     </Show>
                   </div>
+                </div>
 
-                  <div class="flex items-center gap-2.5">
+                <div class="flex flex-wrap items-center gap-2.5">
                     <Button
                       variant="ghost"
                       size="sm"

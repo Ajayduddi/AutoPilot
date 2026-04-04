@@ -1,19 +1,30 @@
+/**
+ * @fileoverview schemas/workflow.schema.
+ *
+ * Zod schemas that define and validate API request contracts.
+ */
 import { z } from 'zod';
 
 // ─────────────────────────────────────────────────────────────
 //  Shared value sets
 // ─────────────────────────────────────────────────────────────
 
+/** Supported workflow provider identifiers. */
 const providerEnum = z.enum(['n8n', 'zapier', 'make', 'sim', 'custom']);
+/** Allowed workflow visibility modes. */
 const visibilityEnum = z.enum(['public', 'private']);
+/** Supported trigger entrypoints for workflow execution. */
 const triggerMethodEnum = z.enum(['webhook', 'api', 'internal']);
+/** Supported authentication strategies for outbound workflow calls. */
 const authTypeEnum = z.enum(['none', 'bearer', 'api_key', 'header_secret', 'custom']);
+/** Actor/source labels for manual or automated trigger events. */
 const triggerSourceEnum = z.enum(['ui', 'chat', 'assistant_action', 'api', 'system']);
 
 // ─────────────────────────────────────────────────────────────
 //  Workflow Create
 // ─────────────────────────────────────────────────────────────
 
+/** Validates request body for workflow creation endpoint. */
 export const createWorkflowSchema = z.object({
   body: z.object({
     key: z.string().min(1, 'Workflow key is required').max(128),
@@ -40,6 +51,7 @@ export const createWorkflowSchema = z.object({
 //  Workflow Update
 // ─────────────────────────────────────────────────────────────
 
+/** Validates request body for workflow update endpoint. */
 export const updateWorkflowSchema = z.object({
   body: z.object({
     key: z.string().min(1).max(128).optional(),
@@ -69,6 +81,7 @@ export const updateWorkflowSchema = z.object({
 //  Workflow Trigger
 // ─────────────────────────────────────────────────────────────
 
+/** Validates request body for manual workflow trigger endpoint. */
 export const triggerWorkflowSchema = z.object({
   body: z.object({
     source: triggerSourceEnum.default('api'),
@@ -81,6 +94,7 @@ export const triggerWorkflowSchema = z.object({
 //  Test connection
 // ─────────────────────────────────────────────────────────────
 
+/** Validates request body for provider connection test endpoint. */
 export const testConnectionSchema = z.object({
   body: z.object({
     executionEndpoint: z.string().url('Must be a valid URL'),

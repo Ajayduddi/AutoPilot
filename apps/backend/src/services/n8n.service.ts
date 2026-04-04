@@ -1,7 +1,16 @@
+/**
+ * N8nService class.
+ *
+ * Encapsulates n8n service behavior for application service orchestration.
+ *
+ * @remarks
+ * This service is part of the backend composition pipeline and is used by
+ * higher-level route/service flows to keep responsibilities separated.
+ */
 export class N8nService {
-  static async executeWorkflow(webhookUrl: string, payload: any, traceId: string) {
+    static async executeWorkflow(webhookUrl: string, payload: any, traceId: string) {
     try {
-      const response = await fetch(webhookUrl, {
+            const response = await fetch(webhookUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

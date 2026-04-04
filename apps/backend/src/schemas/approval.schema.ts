@@ -1,5 +1,13 @@
+/**
+ * @fileoverview schemas/approval.schema.
+ *
+ * Zod schemas that define and validate API request contracts.
+ */
 import { z } from 'zod';
 
+/**
+ * createApprovalSchema exported constant.
+ */
 export const createApprovalSchema = z.object({
   body: z.object({
     runId: z.string().trim().min(1, 'runId is required'),

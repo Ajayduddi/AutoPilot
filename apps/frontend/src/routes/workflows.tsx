@@ -5,28 +5,24 @@ import { WorkflowListCard } from "../components/workflow/WorkflowListCard";
 import { Button } from "../components/ui/Button";
 import { CustomSelect } from "../components/ui/CustomSelect";
 import { WorkflowIcon } from "../components/ui/icons";
+import { useMobileMenu } from "../context/mobile-menu.context";
 import { workflowsApi } from "../lib/api";
 import { authTypeOptions, httpMethodOptions, providerFilterOptions as providers, providerOptions, triggerMethodOptions, visibilityOptions } from "../lib/workflow-form-options";
 import { buildWorkflowAuthConfig, computeWorkflowStats, parseOptionalJson, type WorkflowCreateFormState } from "./workflows.helpers";
-
 const FilterIcon = (paths: string[]) => () => (
   <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     {paths.map((d) => <path d={d} />)}
   </svg>
 );
-
 const allFiltersIcon = FilterIcon(["M3 5h18", "M6 12h12", "M10 19h4"]);
 const visibilityAllIcon = FilterIcon(["M3 12s4-7 9-7 9 7 9 7-4 7-9 7-9-7-9-7", "M12 12h.01"]);
-
 const providerIcons = new Map(
   providerOptions.map((option) => [option.value, option.icon] as const)
 );
-
 const providerFilterOptions = providers.map((option) => ({
   ...option,
   icon: option.value ? providerIcons.get(option.value) : allFiltersIcon,
 }));
-
 const visibilityFilterOptions = [
   { value: "", label: "All Visibility", icon: visibilityAllIcon },
   ...visibilityOptions,
@@ -34,6 +30,7 @@ const visibilityFilterOptions = [
 
 export default function Workflows() {
   const navigate = useNavigate();
+  const mobileMenu = useMobileMenu();
   const [search, setSearch] = createSignal("");
   const [providerFilter, setProviderFilter] = createSignal("");
   const [visibilityFilter, setVisibilityFilter] = createSignal("");
@@ -47,6 +44,21 @@ export default function Workflows() {
     const saved = localStorage.getItem("wf-view-mode");
     if (saved === "list" || saved === "grid") setViewMode(saved);
   });
+  /**
+   * Utility function to toggle view.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param mode - Input value for toggleView.
+   * @returns Return value from toggleView.
+   *
+   * @example
+   * ```typescript
+   * const output = toggleView(value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   function toggleView(mode: "grid" | "list") {
     setViewMode(mode);
     localStorage.setItem("wf-view-mode", mode);
@@ -62,11 +74,44 @@ export default function Workflows() {
   };
   const [form, setForm] = createSignal<WorkflowCreateFormState>({ ...emptyForm });
 
+  /**
+   * Utility function to update field.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param field - Input value for updateField.
+   * @param value - Input value for updateField.
+   * @returns Return value from updateField.
+   *
+   * @example
+   * ```typescript
+   * const output = updateField(value, value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   function updateField(field: keyof WorkflowCreateFormState, value: string) {
     setForm(prev => ({ ...prev, [field]: value }));
   }
 
+  /**
+   * Utility function to handle create.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from handleCreate.
+   *
+   * @example
+   * ```typescript
+   * const output = handleCreate();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleCreate() {
+    /**
+     * Utility function to f variable.
+     */
     const f = form();
     if (!f.key || !f.name) { setCreateError("Key and name are required"); return; }
     setCreating(true);
@@ -105,7 +150,6 @@ export default function Workflows() {
 
   // Shared CSS classes
   const inputCls = "workflow-input px-3 py-2 rounded-lg border text-sm focus:outline-none focus:border-neutral-500/90 focus:ring-1 focus:ring-neutral-500/25 transition-colors";
-
   const filters = createMemo(() => ({
     provider: providerFilter() || undefined,
     visibility: visibilityFilter() || undefined,
@@ -115,6 +159,21 @@ export default function Workflows() {
 
   const [workflows, { refetch }] = createResource(filters, (f) => workflowsApi.getAll(f));
 
+  /**
+   * Utility function to handle trigger.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param id - Input value for handleTrigger.
+   * @returns Return value from handleTrigger.
+   *
+   * @example
+   * ```typescript
+   * const output = handleTrigger(value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleTrigger(id: string) {
     setTriggering(id);
     try {
@@ -127,7 +186,6 @@ export default function Workflows() {
       setTriggering(null);
     }
   }
-
   const stats = createMemo(() => {
     return computeWorkflowStats(workflows() || [], providers);
   });
@@ -137,13 +195,18 @@ export default function Workflows() {
       <Title>Workflows — AutoPilot</Title>
       <main class="workflow-page flex-1 flex flex-col h-full min-w-0">
         {/* Header */}
-        <header class="px-6 py-4 border-b border-neutral-800/20 bg-transparent shrink-0">
-          <div class="workflow-shell flex items-center justify-between">
-            <div>
-              <h1 class="page-title">Workflow Registry</h1>
-              <p class="page-subtitle">Manage, trigger, and monitor your automations across all providers.</p>
+        <header class="px-4 md:px-6 py-4 border-b border-neutral-800/20 bg-transparent shrink-0">
+          <div class="workflow-shell flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div class="flex items-center gap-3 w-full md:w-auto">
+              <button onClick={() => mobileMenu.toggle()} class="md:hidden p-2 -ml-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800/50 block shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+              </button>
+              <div class="flex-1 min-w-0">
+                <h1 class="page-title truncate">Workflow Registry</h1>
+                <p class="page-subtitle hidden sm:block truncate">Manage, trigger, and monitor your automations across all providers.</p>
+              </div>
             </div>
-            <div class="flex items-center gap-3">
+            <div class="flex items-center justify-end gap-3 w-full md:w-auto shrink-0">
               <Show when={stats().byProvider.length > 0}>
                 <div class="flex gap-1.5">
                   {stats().byProvider.map(p => (
@@ -330,27 +393,65 @@ export default function Workflows() {
         </Show>
 
         {/* Toolbar */}
-        <div class="px-6 py-3 border-b border-slate-700/25 bg-black/10 shrink-0">
-          <div class="workflow-shell rounded-xl border border-neutral-800/70 bg-neutral-950/55 px-3 py-2 flex flex-wrap items-center gap-2.5">
-            {/* Search */}
-            <div class="flex-1 min-w-[220px] max-w-sm relative">
-              <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 workflow-dim" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input
-                type="text"
-                placeholder="Search workflows…"
-                value={search()}
-                onInput={(e) => setSearch(e.currentTarget.value)}
-                class="workflow-input w-full pl-8 pr-3 py-1.5 rounded-lg border text-sm focus:outline-none focus:border-neutral-500/90 focus:ring-1 focus:ring-neutral-500/25 transition-all"
-              />
+        <div class="px-4 md:px-6 py-3 border-b border-slate-700/25 bg-black/10 shrink-0">
+          <div class="workflow-shell rounded-xl border border-neutral-800/70 bg-neutral-950/55 px-3 py-2 flex flex-col gap-2">
+
+            {/* Row 1: Search + stats + view toggle */}
+            <div class="flex items-center gap-2">
+              <div class="flex-1 min-w-0 relative">
+                <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 workflow-dim" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input
+                  type="text"
+                  placeholder="Search workflows…"
+                  value={search()}
+                  onInput={(e) => setSearch(e.currentTarget.value)}
+                  class="workflow-input w-full pl-8 pr-3 py-1.5 rounded-lg border text-sm focus:outline-none focus:border-neutral-500/90 focus:ring-1 focus:ring-neutral-500/25 transition-all"
+                />
+              </div>
+
+              <span class="hidden sm:block text-[10px] workflow-dim shrink-0 px-2.5 py-1 rounded-md border border-neutral-800/70 bg-neutral-900/50">
+                {stats().total} workflow{stats().total !== 1 ? "s" : ""}
+                {stats().enabled !== stats().total && ` (${stats().enabled} active)`}
+              </span>
+
+              <div class="shrink-0 flex items-center gap-0.5 bg-neutral-800/60 border border-neutral-700/40 rounded-lg p-0.5">
+                <button
+                  onClick={() => toggleView("grid")}
+                  title="Grid view"
+                  class={`flex items-center justify-center w-6 h-6 rounded-md transition-all duration-150 ${
+                    viewMode() === "grid"
+                      ? "bg-neutral-600/80 text-slate-100 shadow-sm"
+                      : "text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                    <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+                  </svg>
+                </button>
+                <button
+                  onClick={() => toggleView("list")}
+                  title="List view"
+                  class={`flex items-center justify-center w-6 h-6 rounded-md transition-all duration-150 ${
+                    viewMode() === "list"
+                      ? "bg-neutral-600/80 text-slate-100 shadow-sm"
+                      : "text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+                  </svg>
+                </button>
+              </div>
             </div>
 
-            {/* Provider filter */}
-            <div class="flex items-center gap-2 rounded-xl border border-neutral-800/80 bg-neutral-900/55 px-2 py-1">
+            {/* Row 2: Filter dropdowns — wrap on mobile */}
+            <div class="flex flex-wrap items-center justify-end md:justify-start gap-2">
               <CustomSelect
                 options={providerFilterOptions}
                 value={providerFilter()}
                 onChange={setProviderFilter}
-                class="min-w-[152px]"
+                class="min-w-[120px] sm:min-w-[140px] flex-1 sm:flex-none"
                 triggerClass="py-1.5 rounded-lg text-xs bg-neutral-900/75 border-neutral-700/80 hover:border-neutral-600/90"
                 menuClass="rounded-xl border-neutral-700/80"
               />
@@ -359,7 +460,7 @@ export default function Workflows() {
                 options={visibilityFilterOptions}
                 value={visibilityFilter()}
                 onChange={setVisibilityFilter}
-                class="min-w-[152px]"
+                class="min-w-[120px] sm:min-w-[140px] flex-1 sm:flex-none"
                 triggerClass="py-1.5 rounded-lg text-xs bg-neutral-900/75 border-neutral-700/80 hover:border-neutral-600/90"
                 menuClass="rounded-xl border-neutral-700/80"
               />
@@ -368,7 +469,7 @@ export default function Workflows() {
                 type="button"
                 aria-pressed={showArchived()}
                 onClick={() => setShowArchived(!showArchived())}
-                class={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all duration-200 ${
+                class={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all duration-200 shrink-0 ${
                   showArchived()
                     ? "border-indigo-500/35 bg-indigo-500/12 text-indigo-200"
                     : "border-neutral-700/80 bg-neutral-900/70 text-neutral-400 hover:text-neutral-200 hover:border-neutral-600/85"
@@ -387,42 +488,6 @@ export default function Workflows() {
               </button>
             </div>
 
-            {/* Stats pill */}
-            <span class="text-[10px] workflow-dim ml-auto px-2.5 py-1 rounded-md border border-neutral-800/70 bg-neutral-900/50">
-              {stats().total} workflow{stats().total !== 1 ? "s" : ""}
-              {stats().enabled !== stats().total && ` (${stats().enabled} active)`}
-            </span>
-
-            {/* View toggle */}
-            <div class="flex items-center gap-0.5 bg-neutral-800/60 border border-neutral-700/40 rounded-lg p-0.5">
-              <button
-                onClick={() => toggleView("grid")}
-                title="Grid view"
-                class={`flex items-center justify-center w-6 h-6 rounded-md transition-all duration-150 ${
-                  viewMode() === "grid"
-                    ? "bg-neutral-600/80 text-slate-100 shadow-sm"
-                    : "text-slate-500 hover:text-slate-300"
-                }`}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-                  <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
-                </svg>
-              </button>
-              <button
-                onClick={() => toggleView("list")}
-                title="List view"
-                class={`flex items-center justify-center w-6 h-6 rounded-md transition-all duration-150 ${
-                  viewMode() === "list"
-                    ? "bg-neutral-600/80 text-slate-100 shadow-sm"
-                    : "text-slate-500 hover:text-slate-300"
-                }`}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
-                </svg>
-              </button>
-            </div>
           </div>
         </div>
 

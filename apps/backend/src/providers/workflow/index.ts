@@ -1,8 +1,15 @@
+/**
+ * @fileoverview providers/workflow/index.
+ *
+ * External provider adapters and interfaces for LLMs and workflow engines.
+ */
 // ─────────────────────────────────────────────────────────────
 //  Workflow Provider Module — Public API
 // ─────────────────────────────────────────────────────────────
 
+/** Public adapter contract used by workflow provider implementations. */
 export type { WorkflowProviderAdapter } from './provider.interface';
+/** Shared workflow-provider DTOs used by adapters, services, and routes. */
 export type {
   ValidationResult,
   NormalizedProviderResult,

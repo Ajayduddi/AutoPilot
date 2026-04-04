@@ -6,29 +6,48 @@ import { ActionRow } from "./ActionRow";
 import { SectionHeader } from "./SectionHeader";
 import { MarkdownContent } from "./MarkdownContent";
 import { StreamingCursor } from "./StreamingCursor";
+import { SourceBlockView } from "./blocks/SourceBlockView";
+import { EmailDraftBlockView } from "./blocks/EmailDraftBlockView";
+import { QuestionMcqView } from "./blocks/QuestionMcqView";
 import type {
   ActionItem, AssistantBlock, TaskCardBlock, WorkflowStatusBlock,
   DetailToggleBlock, TimelineBlock, ApprovalCardBlock,
 } from "./types";
 
+/**
+ * Interface describing block renderer props shape.
+ */
 interface BlockRendererProps {
   blocks: AssistantBlock[];
-  /** Index of the block currently receiving streaming text chunks (-1 = none) */
+  messageId?: string;
   streamingBlockIdx?: number;
   onTaskOpen?: (block: TaskCardBlock) => void;
   onWorkflowOpen?: (block: WorkflowStatusBlock) => void;
   onAction?: (action: ActionItem) => void | Promise<void>;
+  onQuestionAnswer?: (payload: { messageId?: string; questionId: string; optionId?: string; valueToSend: string }) => void | Promise<void>;
 }
-
-// ─── Timeline block ──────────────────────────────────────────────────────────
-
 const timelineStatusDot: Record<string, string> = {
-  done:    "bg-emerald-500",
-  active:  "bg-blue-500 animate-pulse",
-  failed:  "bg-red-500",
+  done: "bg-emerald-500",
+  active: "bg-blue-500 animate-pulse",
+  failed: "bg-red-500",
   pending: "bg-neutral-600",
 };
 
+/**
+ * Utility function to timeline view.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param props - Input value for TimelineView.
+ * @returns Return value from TimelineView.
+ *
+ * @example
+ * ```typescript
+ * const output = TimelineView(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function TimelineView(props: { block: TimelineBlock }) {
   return (
     <section class="block-enter space-y-0">
@@ -59,25 +78,39 @@ function TimelineView(props: { block: TimelineBlock }) {
   );
 }
 
-// ─── Detail toggle block ─────────────────────────────────────────────────────
-
+/**
+ * Utility function to detail toggle view.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @returns Return value from DetailToggleView.
+ *
+ * @example
+ * ```typescript
+ * const output = DetailToggleView();
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function DetailToggleView(props: {
   block: DetailToggleBlock;
+  messageId?: string;
   streamingBlockIdx?: number;
   onTaskOpen?: BlockRendererProps["onTaskOpen"];
   onWorkflowOpen?: BlockRendererProps["onWorkflowOpen"];
   onAction?: BlockRendererProps["onAction"];
+  onQuestionAnswer?: BlockRendererProps["onQuestionAnswer"];
 }) {
   const [open, setOpen] = createSignal(false);
   return (
-    <section class="block-enter rounded-xl border border-neutral-800/70 overflow-hidden">
+    <section class="block-enter rounded-xl border border-neutral-800/50 overflow-hidden bg-neutral-900/20">
       <button
-        onClick={() => setOpen(v => !v)}
-        class="w-full flex items-center justify-between px-4 py-2.5 text-sm text-neutral-200 hover:bg-neutral-800/40 transition-colors"
+        onClick={() => setOpen((v) => !v)}
+        class="w-full flex items-center justify-between px-3.5 py-2 text-xs text-neutral-300 hover:bg-neutral-800/30 transition-colors"
       >
         <span class="font-medium">{props.block.summary}</span>
         <svg
-          class={`w-4 h-4 text-neutral-500 transition-transform duration-200 ${open() ? "rotate-180" : ""}`}
+          class={`w-3.5 h-3.5 text-neutral-500 transition-transform duration-200 ${open() ? "rotate-180" : ""}`}
           viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
           stroke-linecap="round" stroke-linejoin="round"
         >
@@ -85,13 +118,15 @@ function DetailToggleView(props: {
         </svg>
       </button>
       <Show when={open()}>
-        <div class="px-4 pb-4 pt-1 border-t border-neutral-800/60">
+        <div class="px-3.5 pb-3 pt-1 border-t border-neutral-800/50">
           <BlockRenderer
             blocks={props.block.children}
+            messageId={props.messageId}
             streamingBlockIdx={props.streamingBlockIdx}
             onTaskOpen={props.onTaskOpen}
             onWorkflowOpen={props.onWorkflowOpen}
             onAction={props.onAction}
+            onQuestionAnswer={props.onQuestionAnswer}
           />
         </div>
       </Show>
@@ -99,18 +134,31 @@ function DetailToggleView(props: {
   );
 }
 
-// ─── Approval card block ─────────────────────────────────────────────────────
-
+/**
+ * Utility function to approval card view.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param props - Input value for ApprovalCardView.
+ * @returns Return value from ApprovalCardView.
+ *
+ * @example
+ * ```typescript
+ * const output = ApprovalCardView(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function ApprovalCardView(props: { block: ApprovalCardBlock; onAction?: BlockRendererProps["onAction"] }) {
   const statusConfig = {
-    pending:  { pill: "text-amber-400 bg-amber-500/10 border-amber-500/20", label: "Pending Approval" },
+    pending: { pill: "text-amber-400 bg-amber-500/10 border-amber-500/20", label: "Pending Approval" },
     approved: { pill: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", label: "Approved" },
     rejected: { pill: "text-red-400 bg-red-500/10 border-red-500/20", label: "Rejected" },
   };
   const cfg = () => statusConfig[props.block.status];
 
   return (
-    <section class="block-enter rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3.5 space-y-3">
+    <section class="block-enter rounded-2xl border border-amber-500/20 bg-amber-500/5 px-5 py-4 space-y-3">
       <div class="flex items-start justify-between gap-3">
         <div class="flex items-center gap-2">
           <svg class="w-4 h-4 text-amber-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -155,8 +203,21 @@ function ApprovalCardView(props: { block: ApprovalCardBlock; onAction?: BlockRen
   );
 }
 
-// ─── Main BlockRenderer ──────────────────────────────────────────────────────
-
+/**
+ * Utility function to block renderer.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param props - Input value for BlockRenderer.
+ * @returns Return value from BlockRenderer.
+ *
+ * @example
+ * ```typescript
+ * const output = BlockRenderer(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function BlockRenderer(props: BlockRendererProps) {
   const isStreamingBlock = (idx: number) =>
     props.streamingBlockIdx !== undefined && props.streamingBlockIdx === idx;
@@ -168,7 +229,6 @@ export function BlockRenderer(props: BlockRendererProps) {
           const streaming = () => isStreamingBlock(i());
 
           switch (block.type) {
-
             case "summary":
               return <div class="block-enter"><SummaryBlock title={block.title} items={block.items} /></div>;
 
@@ -215,27 +275,34 @@ export function BlockRenderer(props: BlockRendererProps) {
                 </section>
               );
 
-            case "source":
+            case "source": {
+              const debugKeys = new Set([
+                "answerMode", "routeKind", "contextScope", "contextsUsed",
+                "workflowsUsed", "contextPass", "evidenceExpanded", "modelTier",
+                "dataAgeSeconds", "rerunPromptPending", "selectedProvider",
+                "selectedModel", "model", "autoMode", "failoverCount", "attempted",
+                "planId", "planStepId", "selectedSubagent", "riskEvaluation",
+              ]);
+              const userMetadata = (block.metadata || []).filter((item: string) => {
+                const key = String(item).split(":")[0]?.trim() || "";
+                const normalizedKey = key.toLowerCase();
+                if (debugKeys.has(key)) return false;
+                if (normalizedKey.startsWith("react")) return false;
+                if (normalizedKey.startsWith("plan")) return false;
+                if (normalizedKey.startsWith("step")) return false;
+                return true;
+              });
+              const hasDebugMeta = (block.metadata || []).length > userMetadata.length;
               return (
-                <section class="block-enter rounded-xl bg-neutral-900/40 border border-neutral-800/60 px-4 py-3">
-                  <SectionHeader title={block.title || "Source"} divider />
-                  <div class="mt-2 text-sm text-neutral-300 space-y-1.5">
-                    <p class="text-neutral-400">{block.origin}</p>
-                    <Show when={block.actor}>
-                      <p class="text-xs text-neutral-500">Actor: {block.actor}</p>
-                    </Show>
-                    <Show when={block.metadata && block.metadata.length > 0}>
-                      <div class="flex flex-wrap gap-1.5 pt-1">
-                        <For each={block.metadata}>
-                          {(item) => (
-                            <span class="text-[11px] text-neutral-400 bg-neutral-800/70 px-2 py-0.5 rounded-md">{item}</span>
-                          )}
-                        </For>
-                      </div>
-                    </Show>
-                  </div>
-                </section>
+                <SourceBlockView
+                  origin={block.origin}
+                  actor={block.actor}
+                  title={block.title}
+                  userMetadata={userMetadata}
+                  debugMetadata={hasDebugMeta ? (block.metadata || []) : []}
+                />
               );
+            }
 
             case "actions":
               return (
@@ -288,6 +355,18 @@ export function BlockRenderer(props: BlockRendererProps) {
                 </section>
               );
 
+            case "email_draft":
+              return (
+                <EmailDraftBlockView
+                  subject={block.subject}
+                  body={block.body}
+                  intro={(block as { intro?: string }).intro}
+                  outro={(block as { outro?: string }).outro}
+                  signature={(block as { signature?: string[] }).signature}
+                  onAction={props.onAction}
+                />
+              );
+
             case "error":
               return (
                 <section class="block-enter rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-3 flex items-start gap-3">
@@ -313,18 +392,54 @@ export function BlockRenderer(props: BlockRendererProps) {
               return (
                 <DetailToggleView
                   block={block}
+                  messageId={props.messageId}
                   streamingBlockIdx={props.streamingBlockIdx}
                   onTaskOpen={props.onTaskOpen}
                   onWorkflowOpen={props.onWorkflowOpen}
                   onAction={props.onAction}
+                  onQuestionAnswer={props.onQuestionAnswer}
                 />
               );
 
             case "approval_card":
               return <ApprovalCardView block={block} onAction={props.onAction} />;
 
+            case "question_mcq": {
+              const previousBlock = i() > 0 ? props.blocks[i() - 1] : null;
+              const previousSuggestsContinue = (() => {
+                if (!previousBlock || (previousBlock.type !== "markdown" && previousBlock.type !== "text")) return false;
+                const prevText = String((previousBlock as any).text || "").toLowerCase();
+                return /\b(would you like|do you want|shall i|i can proceed|continue)\b/.test(prevText);
+              })();
+              return (
+                <QuestionMcqView
+                  messageId={props.messageId}
+                  block={block}
+                  compactProceedPrompt={previousSuggestsContinue}
+                  onTaskOpen={props.onTaskOpen}
+                  onWorkflowOpen={props.onWorkflowOpen}
+                  onAction={props.onAction}
+                  onQuestionAnswer={props.onQuestionAnswer}
+                  renderContinuation={() =>
+                    Array.isArray(block.continuation) && block.continuation.length > 0 ? (
+                      <BlockRenderer
+                        blocks={block.continuation}
+                        messageId={props.messageId}
+                        streamingBlockIdx={props.streamingBlockIdx}
+                        onTaskOpen={props.onTaskOpen}
+                        onWorkflowOpen={props.onWorkflowOpen}
+                        onAction={props.onAction}
+                        onQuestionAnswer={props.onQuestionAnswer}
+                      />
+                    ) : (
+                      <></>
+                    )
+                  }
+                />
+              );
+            }
+
             default: {
-              // Graceful fallback for unknown block types — never silently drop
               const unknown = block as any;
               if (unknown?.text) {
                 return (

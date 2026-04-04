@@ -1,3 +1,8 @@
+/**
+ * @fileoverview repositories/context.repo.
+ *
+ * Database access utilities and persistence workflows for backend entities.
+ */
 import { eq, and, desc, sql, SQL } from 'drizzle-orm';
 import { db } from '../db';
 import { contextMemory } from '../db/schema';
@@ -6,8 +11,12 @@ import { contextMemory } from '../db/schema';
 //  Types
 // ─────────────────────────────────────────────────────────────
 
-export type ContextCategory = 'workflow_run' | 'assistant_decision' | 'thread_state';
+/** Supported categories for persisted context memory records. */
+export type ContextCategory = 'workflow_run' | 'assistant_decision' | 'thread_state' | 'audit_event';
 
+/**
+ * CreateContextItemInput type contract.
+ */
 export interface CreateContextItemInput {
   id: string;
   threadId?: string;
@@ -21,6 +30,9 @@ export interface CreateContextItemInput {
   expiresAt?: Date;
 }
 
+/**
+ * ContextItem type contract.
+ */
 export interface ContextItem {
   id: string;
   threadId: string | null;
@@ -39,7 +51,16 @@ export interface ContextItem {
 //  Repository
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * Repository for CRUD/search operations on context memory records.
+ *
+ * @example
+ * ```typescript
+ * const items = await ContextRepo.getByThread(threadId, 5);
+ * ```
+ */
 export const ContextRepo = {
+  /** Inserts a new context memory row. */
   async create(data: CreateContextItemInput): Promise<ContextItem> {
     const [item] = await db.insert(contextMemory).values(data).returning();
     return item as unknown as ContextItem;

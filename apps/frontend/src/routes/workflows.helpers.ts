@@ -1,5 +1,8 @@
-import type { WorkflowDto } from "@chat-automation/shared";
+import type { WorkflowDto } from "@autopilot/shared";
 
+/**
+  * workflow create form state type alias.
+  */
 export type WorkflowCreateFormState = {
   key: string;
   name: string;
@@ -23,6 +26,21 @@ export type WorkflowCreateFormState = {
   customAuthJson: string;
 };
 
+/**
+ * Utility function to build workflow auth config.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param form - Input value for buildWorkflowAuthConfig.
+ * @returns Return value from buildWorkflowAuthConfig.
+ *
+ * @example
+ * ```typescript
+ * const output = buildWorkflowAuthConfig(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function buildWorkflowAuthConfig(form: WorkflowCreateFormState): Record<string, unknown> | undefined {
   switch (form.authType) {
     case "bearer":
@@ -43,6 +61,22 @@ export function buildWorkflowAuthConfig(form: WorkflowCreateFormState): Record<s
   }
 }
 
+/**
+ * Utility function to parse optional json.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param value - Input value for parseOptionalJson.
+ * @param label - Input value for parseOptionalJson.
+ * @returns Return value from parseOptionalJson.
+ *
+ * @example
+ * ```typescript
+ * const output = parseOptionalJson(value, value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function parseOptionalJson(value: string, label: string): Record<string, unknown> | undefined {
   if (!value.trim()) return undefined;
   try {
@@ -52,6 +86,20 @@ export function parseOptionalJson(value: string, label: string): Record<string, 
   }
 }
 
+/**
+ * Utility function to compute workflow stats.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @returns Return value from computeWorkflowStats.
+ *
+ * @example
+ * ```typescript
+ * const output = computeWorkflowStats();
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function computeWorkflowStats(
   workflows: WorkflowDto[],
   providerFilters: Array<{ value: string; label: string }>,

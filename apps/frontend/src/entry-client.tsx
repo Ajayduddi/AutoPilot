@@ -1,8 +1,23 @@
 // @refresh reload
 import { mount, StartClient } from "@solidjs/start/client";
-
 let mountResult: unknown;
 
+/**
+ * Utility function to show runtime banner.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param prefix - Input value for showRuntimeBanner.
+ * @param message - Input value for showRuntimeBanner.
+ * @returns Return value from showRuntimeBanner.
+ *
+ * @example
+ * ```typescript
+ * const output = showRuntimeBanner(value, value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function showRuntimeBanner(prefix: string, message: string) {
   const banner = document.createElement("div");
   banner.style.position = "fixed";

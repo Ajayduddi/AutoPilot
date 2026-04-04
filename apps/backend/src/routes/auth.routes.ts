@@ -1,3 +1,8 @@
+/**
+ * @fileoverview routes/auth.routes.
+ *
+ * HTTP endpoints, request validation, and response composition for API resources.
+ */
 import { Router } from 'express';
 import { db } from '../db';
 import { users } from '../db/schema';
@@ -5,18 +10,19 @@ import { and, eq, ne } from 'drizzle-orm';
 import { AuthService, toSafeUser } from '../services/auth.service';
 import { UserRepo } from '../repositories/user.repo';
 import { rateLimit } from '../middleware/rate-limit.middleware';
+import { TemporalService } from '../services/temporal.service';
 
 const router = Router();
 
 function getIp(req: any) {
-  const xfwd = req.headers['x-forwarded-for'];
+    const xfwd = req.headers['x-forwarded-for'];
   if (typeof xfwd === 'string' && xfwd.trim()) return xfwd.split(',')[0].trim();
   return req.socket?.remoteAddress || null;
 }
 
 router.get('/state', async (req, res, next) => {
   try {
-    const mode = await AuthService.getAuthMode(req.auth?.user);
+        const mode = await AuthService.getAuthMode(req.auth?.user);
     res.json({
       status: 'ok',
       data: {
@@ -34,27 +40,27 @@ router.get('/state', async (req, res, next) => {
 
 router.post('/onboarding/register', async (req, res, next) => {
   try {
-    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
-    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+        const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+        const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+        const password = typeof req.body?.password === 'string' ? req.body.password : '';
 
     if (!email || !password || password.length < 8) {
       return res.status(400).json({ error: 'Valid email and password (min 8 chars) are required' });
     }
 
-    const realUsers = await UserRepo.countRealUsers();
+        const realUsers = await UserRepo.countRealUsers();
     if (realUsers > 0) {
       return res.status(409).json({ error: 'Onboarding is closed. Account already exists.' });
     }
 
-    const existingReal = await db.query.users.findFirst({ where: andRealByEmail(email) });
+        const existingReal = await db.query.users.findFirst({ where: andRealByEmail(email) });
     if (existingReal) {
       return res.status(409).json({ error: 'Email already in use' });
     }
 
     await UserRepo.normalizeLegacyEmailIfConflicts(email);
-    const passwordHash = await AuthService.hashPassword(password);
-    const created = await UserRepo.createUser({
+        const passwordHash = await AuthService.hashPassword(password);
+        const created = await UserRepo.createUser({
       email,
       name: name || null,
       passwordHash,
@@ -62,9 +68,9 @@ router.post('/onboarding/register', async (req, res, next) => {
     await UserRepo.reassignLegacyDataTo(created.id);
     await UserRepo.deleteLegacyUser().catch(() => {});
 
-    const token = await AuthService.createSessionForUser({
+        const token = await AuthService.createSessionForUser({
       userId: created.id,
-      userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+            userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
       ip: getIp(req),
     });
 
@@ -81,29 +87,29 @@ router.post(
     keyPrefix: 'auth-login',
     limit: 10,
     windowMs: 60_000,
-    keyBy: (req) => {
-      const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-      const xfwd = req.headers['x-forwarded-for'];
-      const ip = typeof xfwd === 'string' && xfwd.trim() ? xfwd.split(',')[0].trim() : req.socket?.remoteAddress || 'unknown';
+        keyBy: (req) => {
+            const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+            const xfwd = req.headers['x-forwarded-for'];
+            const ip = typeof xfwd === 'string' && xfwd.trim() ? xfwd.split(',')[0].trim() : req.socket?.remoteAddress || 'unknown';
       return `${ip}:${email || 'unknown'}`;
     },
   }),
   async (req, res, next) => {
   try {
-    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+        const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+        const password = typeof req.body?.password === 'string' ? req.body.password : '';
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
-    const user = await UserRepo.getByEmail(email);
+        const user = await UserRepo.getByEmail(email);
     if (!user || user.id === UserRepo.LEGACY_USER_ID) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    const valid = await AuthService.verifyPassword(password, user.passwordHash);
+        const valid = await AuthService.verifyPassword(password, user.passwordHash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const token = await AuthService.createSessionForUser({
+        const token = await AuthService.createSessionForUser({
       userId: user.id,
-      userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+            userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
       ip: getIp(req),
     });
 
@@ -131,11 +137,11 @@ router.get('/me', async (req, res) => {
 
 router.get('/account', async (req, res) => {
   if (!req.auth?.user) return res.status(401).json({ error: 'Authentication required' });
-  const user = await UserRepo.getById(req.auth.user.id);
+    const user = await UserRepo.getById(req.auth.user.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  const hasPassword = Boolean(user.passwordHash);
-  const authProvider = hasPassword
+    const hasPassword = Boolean(user.passwordHash);
+    const authProvider = hasPassword
     ? (user.googleSub ? 'hybrid' : 'password')
     : 'google';
 
@@ -145,6 +151,7 @@ router.get('/account', async (req, res) => {
       id: user.id,
       name: user.name || null,
       email: user.email,
+      timezone: user.timezone || null,
       hasPassword,
       authProvider,
     },
@@ -154,11 +161,16 @@ router.get('/account', async (req, res) => {
 router.patch('/account/profile', async (req, res, next) => {
   try {
     if (!req.auth?.user) return res.status(401).json({ error: 'Authentication required' });
-    const rawName = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+        const rawName = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+        const rawTimezone = typeof req.body?.timezone === 'string' ? req.body.timezone.trim() : '';
     if (!rawName) return res.status(400).json({ error: 'Username is required' });
     if (rawName.length > 80) return res.status(400).json({ error: 'Username is too long (max 80 chars)' });
+        const timezone = rawTimezone ? TemporalService.validateTimezone(rawTimezone) : null;
+    if (rawTimezone && !timezone) {
+      return res.status(400).json({ error: 'Invalid timezone value' });
+    }
 
-    const updated = await UserRepo.updateProfile(req.auth.user.id, { name: rawName });
+        const updated = await UserRepo.updateProfile(req.auth.user.id, { name: rawName, timezone });
     if (!updated) return res.status(404).json({ error: 'User not found' });
     res.json({ status: 'ok', data: { user: toSafeUser(updated) } });
   } catch (err) {
@@ -169,8 +181,8 @@ router.patch('/account/profile', async (req, res, next) => {
 router.patch('/account/email', async (req, res, next) => {
   try {
     if (!req.auth?.user) return res.status(401).json({ error: 'Authentication required' });
-    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
+        const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+        const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
 
     if (!email || !EMAIL_REGEX.test(email)) {
       return res.status(400).json({ error: 'Valid email is required' });
@@ -179,19 +191,19 @@ router.patch('/account/email', async (req, res, next) => {
       return res.status(400).json({ error: 'Current password is required' });
     }
 
-    const user = await UserRepo.getById(req.auth.user.id);
+        const user = await UserRepo.getById(req.auth.user.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (!user.passwordHash) {
       return res.status(400).json({ error: 'Password login is disabled for this account' });
     }
 
-    const validPassword = await AuthService.verifyPassword(currentPassword, user.passwordHash);
+        const validPassword = await AuthService.verifyPassword(currentPassword, user.passwordHash);
     if (!validPassword) return res.status(401).json({ error: 'Current password is incorrect' });
 
-    const inUse = await UserRepo.isEmailTakenByAnotherUser(email, user.id);
+        const inUse = await UserRepo.isEmailTakenByAnotherUser(email, user.id);
     if (inUse) return res.status(409).json({ error: 'Email already in use' });
 
-    const updated = await UserRepo.updateEmail(user.id, email);
+        const updated = await UserRepo.updateEmail(user.id, email);
     if (!updated) return res.status(404).json({ error: 'User not found' });
 
     res.json({ status: 'ok', data: { user: toSafeUser(updated) } });
@@ -203,24 +215,24 @@ router.patch('/account/email', async (req, res, next) => {
 router.patch('/account/password', async (req, res, next) => {
   try {
     if (!req.auth?.user) return res.status(401).json({ error: 'Authentication required' });
-    const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
-    const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
+        const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
+        const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
 
     if (!currentPassword) return res.status(400).json({ error: 'Current password is required' });
     if (!newPassword || newPassword.length < 8) {
       return res.status(400).json({ error: 'New password must be at least 8 characters' });
     }
 
-    const user = await UserRepo.getById(req.auth.user.id);
+        const user = await UserRepo.getById(req.auth.user.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (!user.passwordHash) {
       return res.status(400).json({ error: 'Password login is disabled for this account' });
     }
 
-    const validPassword = await AuthService.verifyPassword(currentPassword, user.passwordHash);
+        const validPassword = await AuthService.verifyPassword(currentPassword, user.passwordHash);
     if (!validPassword) return res.status(401).json({ error: 'Current password is incorrect' });
 
-    const newPasswordHash = await AuthService.hashPassword(newPassword);
+        const newPasswordHash = await AuthService.hashPassword(newPassword);
     await UserRepo.updatePasswordHash(user.id, newPasswordHash);
     await AuthService.revokeOtherSessionsForCookie(user.id, req.headers.cookie);
     res.json({ status: 'ok', data: { updated: true } });
@@ -233,9 +245,12 @@ router.get('/google/start', async (req, res) => {
   if (!AuthService.isGoogleConfigured()) {
     return res.status(400).json({ error: 'Google OAuth is not configured' });
   }
-  const state = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  res.setHeader('Set-Cookie', AuthService.serializeOAuthStateCookie(state));
-  res.redirect(AuthService.getGoogleStartUrl(state));
+  const { state, pkce } = AuthService.generateOAuthStateAndPkce();
+  res.setHeader('Set-Cookie', [
+    AuthService.serializeOAuthStateCookie(state),
+    AuthService.serializePkceCookie(pkce.codeVerifier),
+  ]);
+  res.redirect(AuthService.getGoogleStartUrl(state, pkce.codeChallenge));
 });
 
 router.get('/google/callback', async (req, res) => {
@@ -244,22 +259,26 @@ router.get('/google/callback', async (req, res) => {
       return res.redirect(`${AuthService.FRONTEND_ORIGIN}/login?error=google_not_configured`);
     }
 
-    const code = typeof req.query?.code === 'string' ? req.query.code : '';
-    const state = typeof req.query?.state === 'string' ? req.query.state : '';
-    const cookies = AuthService.parseCookies(req.headers.cookie);
-    const stateCookie = cookies[AuthService.OAUTH_STATE_COOKIE_NAME] || '';
+        const code = typeof req.query?.code === 'string' ? req.query.code : '';
+        const state = typeof req.query?.state === 'string' ? req.query.state : '';
+        const cookies = AuthService.parseCookies(req.headers.cookie);
+        const stateCookie = cookies[AuthService.OAUTH_STATE_COOKIE_NAME] || '';
+        const pkceCookie = cookies[AuthService.OAUTH_PKCE_COOKIE_NAME] || '';
 
     if (!code || !state || !stateCookie || state !== stateCookie) {
-      res.setHeader('Set-Cookie', AuthService.clearOAuthStateCookie());
+      res.setHeader('Set-Cookie', [
+        AuthService.clearOAuthStateCookie(),
+        AuthService.clearPkceCookie(),
+      ]);
       return res.redirect(`${AuthService.FRONTEND_ORIGIN}/login?error=invalid_oauth_state`);
     }
 
-    const profile = await AuthService.exchangeGoogleCode(code);
-    const realUsers = await UserRepo.countRealUsers();
+        const profile = await AuthService.exchangeGoogleCode(code, pkceCookie);
+        const realUsers = await UserRepo.countRealUsers();
 
-    let user = await UserRepo.getByGoogleSub(profile.sub);
+        let user = await UserRepo.getByGoogleSub(profile.sub);
     if (!user) {
-      const byEmail = await UserRepo.getByEmail(profile.email);
+            const byEmail = await UserRepo.getByEmail(profile.email);
       if (byEmail && byEmail.id !== UserRepo.LEGACY_USER_ID) {
         user = byEmail.googleSub
           ? byEmail
@@ -283,24 +302,29 @@ router.get('/google/callback', async (req, res) => {
       if (!user) {
         return res.redirect(`${AuthService.FRONTEND_ORIGIN}/login?error=single_user_locked`);
       }
-      const isAllowed = await UserRepo.canUseAsSingleUser(user.id);
+            const isAllowed = await UserRepo.canUseAsSingleUser(user.id);
       if (!isAllowed) {
         return res.redirect(`${AuthService.FRONTEND_ORIGIN}/login?error=single_user_locked`);
       }
     }
 
-    const token = await AuthService.createSessionForUser({
+        const token = await AuthService.createSessionForUser({
       userId: user.id,
-      userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+            userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
       ip: getIp(req),
     });
 
     res.setHeader('Set-Cookie', [
       AuthService.serializeSessionCookie(token),
       AuthService.clearOAuthStateCookie(),
+      AuthService.clearPkceCookie(),
     ]);
     return res.redirect(`${AuthService.FRONTEND_ORIGIN}/`);
   } catch {
+    res.setHeader('Set-Cookie', [
+      AuthService.clearOAuthStateCookie(),
+      AuthService.clearPkceCookie(),
+    ]);
     return res.redirect(`${AuthService.FRONTEND_ORIGIN}/login?error=google_auth_failed`);
   }
 });

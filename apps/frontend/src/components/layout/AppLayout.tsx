@@ -2,7 +2,6 @@ import { ParentComponent } from "solid-js";
 import { PanelProvider } from "../../context/panel.context";
 import { RightPanel } from "./RightPanel";
 import { NotificationToasts } from "../notifications/NotificationToasts";
-
 export const AppLayout: ParentComponent = (props) => {
   return (
     <PanelProvider>

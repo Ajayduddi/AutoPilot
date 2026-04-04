@@ -1,6 +1,9 @@
 import { ParentComponent, createContext, createResource, createSignal, useContext } from "solid-js";
 import { authApi, type AuthStatePayload } from "../lib/api";
 
+/**
+  * auth context value type alias.
+  */
 type AuthContextValue = {
   state: () => AuthStatePayload | undefined;
   loading: () => boolean;
@@ -12,30 +15,86 @@ type AuthContextValue = {
   authError: () => string;
   setAuthError: (msg: string) => void;
 };
-
 const AuthContext = createContext<AuthContextValue>();
-
 export const AuthProvider: ParentComponent = (props) => {
   const [authError, setAuthError] = createSignal("");
   const [state, { refetch }] = createResource(() => authApi.getState());
 
+  /**
+   * Utility function to refresh.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from refresh.
+   *
+   * @example
+   * ```typescript
+   * const output = refresh();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function refresh() {
     const r = await refetch();
     return r ?? undefined;
   }
 
+  /**
+   * Utility function to login.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param payload - Input value for login.
+   * @returns Return value from login.
+   *
+   * @example
+   * ```typescript
+   * const output = login(value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function login(payload: { email: string; password: string }) {
     setAuthError("");
     await authApi.login(payload);
     await refresh();
   }
 
+  /**
+   * Utility function to register onboarding.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param payload - Input value for registerOnboarding.
+   * @returns Return value from registerOnboarding.
+   *
+   * @example
+   * ```typescript
+   * const output = registerOnboarding(value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function registerOnboarding(payload: { email: string; name?: string; password: string }) {
     setAuthError("");
     await authApi.registerOnboarding(payload);
     await refresh();
   }
 
+  /**
+   * Utility function to logout.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from logout.
+   *
+   * @example
+   * ```typescript
+   * const output = logout();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function logout() {
     setAuthError("");
     await authApi.logout();
@@ -61,6 +120,20 @@ export const AuthProvider: ParentComponent = (props) => {
   );
 };
 
+/**
+ * Utility function to use auth.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @returns Return value from useAuth.
+ *
+ * @example
+ * ```typescript
+ * const output = useAuth();
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used inside AuthProvider");

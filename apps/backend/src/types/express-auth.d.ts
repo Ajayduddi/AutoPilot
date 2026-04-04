@@ -1,3 +1,8 @@
+/**
+ * @fileoverview types/express-auth.d.
+ *
+ * Type augmentation and ambient declarations used by backend runtime modules.
+ */
 import 'express';
 
 declare global {
@@ -8,6 +13,7 @@ declare global {
           id: string;
           email: string;
           name: string | null;
+          timezone?: string | null;
         };
       };
     }

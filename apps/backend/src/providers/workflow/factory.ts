@@ -1,4 +1,9 @@
-import type { WorkflowProvider } from '@chat-automation/shared';
+/**
+ * @fileoverview providers/workflow/factory.
+ *
+ * External provider adapters and interfaces for LLMs and workflow engines.
+ */
+import type { WorkflowProvider } from '@autopilot/shared';
 import type { WorkflowProviderAdapter } from './provider.interface';
 import { N8nAdapter } from './n8n.adapter';
 import { ZapierAdapter } from './zapier.adapter';
@@ -14,10 +19,13 @@ import { SimAdapter } from './sim.adapter';
 //  Resolves a WorkflowProvider enum value to the concrete adapter.
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * WorkflowProviderRegistry class.
+ */
 class WorkflowProviderRegistry {
   private adapters = new Map<WorkflowProvider, WorkflowProviderAdapter>();
 
-  constructor() {
+    constructor() {
     // Register all built-in adapters
     this.register(new N8nAdapter());
     this.register(new ZapierAdapter());
@@ -33,7 +41,7 @@ class WorkflowProviderRegistry {
 
   /** Get adapter for a given provider — falls back to CustomAdapter */
   getAdapter(provider: WorkflowProvider): WorkflowProviderAdapter {
-    const adapter = this.adapters.get(provider);
+        const adapter = this.adapters.get(provider);
     if (adapter) return adapter;
 
     console.warn(`[WorkflowProviderFactory] No adapter for "${provider}", falling back to custom`);

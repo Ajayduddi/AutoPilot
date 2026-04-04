@@ -1,11 +1,17 @@
 import { createSignal, For, Show, JSX, onCleanup, onMount } from "solid-js";
 
+/**
+ * Interface describing select option shape.
+ */
 export interface SelectOption {
   value: string;
   label: string;
   icon?: () => JSX.Element;
 }
 
+/**
+ * Interface describing props shape.
+ */
 interface Props {
   options: SelectOption[];
   value: string;
@@ -16,12 +22,41 @@ interface Props {
   menuClass?: string;
 }
 
+/**
+ * Utility function to custom select.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param props - Input value for CustomSelect.
+ * @returns Return value from CustomSelect.
+ *
+ * @example
+ * ```typescript
+ * const output = CustomSelect(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function CustomSelect(props: Props) {
   const [open, setOpen] = createSignal(false);
   let containerRef: HTMLDivElement | undefined;
-
   const selected = () => props.options.find(o => o.value === props.value);
 
+  /**
+   * Utility function to handle click outside.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param e - Input value for handleClickOutside.
+   * @returns Return value from handleClickOutside.
+   *
+   * @example
+   * ```typescript
+   * const output = handleClickOutside(value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   function handleClickOutside(e: MouseEvent) {
     if (containerRef && !containerRef.contains(e.target as Node)) {
       setOpen(false);

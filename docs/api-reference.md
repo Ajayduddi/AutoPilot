@@ -1,129 +1,213 @@
-# API Reference
+# API Reference (Current)
 
-Base URL: `http://localhost:3000`
+Base URL (local): `http://localhost:3000`
 
-All API responses follow this envelope:
+## Response Conventions
+
+Most success responses:
+
 ```json
-{ "status": "ok", "data": { ... } }
-```
-Errors return:
-```json
-{ "error": "message", "details": [...] }
+{ "status": "ok", "data": {} }
 ```
 
-All requests and responses include the header `x-trace-id` for request lifecycle tracking.
+Some endpoints return `status: "accepted"` (async dispatch) or simple error envelopes:
+
+```json
+{ "error": "message" }
+```
+
+All requests include/propagate `x-trace-id` via trace middleware.
+
+## Authentication and CSRF
+
+- Session auth is cookie-based.
+- Mounted auth-required API groups:
+  - `/api/chat`
+  - `/api/workflows`
+  - `/api/workflow-runs`
+  - `/api/notifications`
+  - `/api/settings`
+- CSRF is enforced for authenticated mutation requests (`POST`, `PUT`, `PATCH`, `DELETE`) using `x-csrf-token` that matches `ap_csrf` cookie.
 
 ---
 
 ## Health
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/health` | Backend liveness check |
+- `GET /health` — liveness
+- `GET /health/ready` — readiness checks (runtime config + DB + webhook security + secrets)
+- `GET /health/metrics` — Prometheus text metrics
 
 ---
 
-## Auth
+## Auth (`/api/auth`)
 
-| Method | Path | Body | Description |
-|---|---|---|---|
-| GET | `/api/auth/state` | — | Returns app auth mode: onboarding/login/authenticated |
-| POST | `/api/auth/onboarding/register` | `{ email, name?, password }` | Create first owner account (single-user only) |
-| POST | `/api/auth/login` | `{ email, password }` | Login with email/password |
-| POST | `/api/auth/logout` | — | Revoke current session |
-| GET | `/api/auth/me` | — | Get current authenticated user |
-| GET | `/api/auth/account` | — | Get account profile/credential capabilities |
-| PATCH | `/api/auth/account/profile` | `{ name }` | Update username/profile name |
-| PATCH | `/api/auth/account/email` | `{ email, currentPassword }` | Update email (requires current password) |
-| PATCH | `/api/auth/account/password` | `{ currentPassword, newPassword }` | Update password (password accounts only) |
-| GET | `/api/auth/google/start` | — | Start Google OAuth |
-| GET | `/api/auth/google/callback` | query | Google OAuth callback |
-
-Notes:
-- Email change requires `currentPassword`.
-- Google-only accounts return `hasPassword: false`; password update is unavailable for those users.
+- `GET /state`
+- `POST /onboarding/register`
+- `POST /login`
+- `POST /logout`
+- `GET /me`
+- `GET /account`
+- `PATCH /account/profile`
+- `PATCH /account/email`
+- `PATCH /account/password`
+- `GET /google/start`
+- `GET /google/callback`
 
 ---
 
-## Chat
+## Chat (`/api/chat`)
 
-| Method | Path | Body | Description |
-|---|---|---|---|
-| POST | `/api/chat/threads` | `{ title? }` | Create a new chat thread |
-| POST | `/api/chat/threads/:threadId/messages` | `{ role, content }` | Post a message; triggers the orchestration loop |
+### Telemetry
 
-`role` enum: `user` \| `assistant` \| `system`
+- `POST /client-telemetry`
+
+### Threads and messages
+
+- `GET /threads`
+- `POST /threads`
+- `PATCH /threads/:threadId`
+- `DELETE /threads/:threadId`
+- `DELETE /threads`
+- `GET /threads/:threadId/messages`
+- `POST /threads/:threadId/messages` (non-streaming)
+- `POST /threads/:threadId/messages/stream` (SSE streaming)
+- `POST /threads/:threadId/messages/:messageId/questions/:questionId/answer`
+
+### Thread analytics/context
+
+- `GET /threads/:threadId/react-telemetry`
+- `GET /threads/:threadId/audit-log`
+
+### Attachments
+
+- `POST /attachments` (multipart form; requires `threadId`, one or more `files`)
+- `GET /attachments/:attachmentId`
+- `DELETE /attachments/:attachmentId`
+
+Streaming event types emitted by `/messages/stream`:
+
+- `attachments_linked`
+- `user_saved`
+- `thinking`
+- `block`
+- `chunk`
+- `block_end`
+- `complete`
+- `error`
 
 ---
 
-## Workflows
+## Workflows (`/api/workflows`)
 
-| Method | Path | Body | Description |
-|---|---|---|---|
-| GET | `/api/workflows` | — | List all enabled workflows from registry |
-| POST | `/api/workflows/:key/execute` | `{ ...params }` | Manually trigger a workflow by key |
-
----
-
-## Approvals
-
-| Method | Path | Body | Description |
-|---|---|---|---|
-| GET | `/api/approvals` | — | Get all pending approvals |
-| POST | `/api/approvals` | `{ runId, userId, summary, details? }` | Create approval request (called by n8n) |
-| POST | `/api/approvals/:id/resolve` | `{ status }` | Resolve an approval (`approved` \| `rejected`) |
+- `GET /`
+- `GET /:id`
+- `POST /`
+- `PATCH /:id`
+- `DELETE /:id` (`?mode=archive|hard`)
+- `POST /:id/trigger` (returns `status: accepted` on dispatch)
+- `GET /:id/runs`
+- `POST /:id/validate`
+- `POST /test-connection`
 
 ---
 
-## Notifications
+## Workflow Runs (`/api/workflow-runs`)
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/notifications` | Fetch unread inbox |
-| GET | `/api/notifications/stream` | SSE stream (keep-alive, real-time events) |
-| POST | `/api/notifications/:id/read` | Mark a notification as read |
+- `GET /:runId`
+- `GET /trace/:traceId`
 
-### SSE Event Envelope
+Optional query:
+
+- `GET /:runId?includeRaw=true`
+
+---
+
+## Approvals (`/api/approvals`)
+
+- `GET /` (auth required)
+- `POST /:id/resolve` (auth required)
+- `POST /` (auth user or webhook secret)
+
+---
+
+## Notifications (`/api/notifications`)
+
+- `GET /stream` (SSE)
+- `GET /`
+- `POST /:id/read`
+- `DELETE /`
+- `GET /push/public-key`
+- `POST /push/subscribe`
+- `POST /push/unsubscribe`
+- `POST /push/test`
+
+SSE event envelope examples:
+
 ```json
-{ "type": "notification" | "workflow_update", "data": { ... } }
+{ "type": "notification", "data": {} }
+```
+
+```json
+{ "type": "workflow_update", "data": {} }
 ```
 
 ---
 
-## Webhooks (provider callbacks)
+## Webhooks (`/api/webhooks`)
 
-| Method | Path | Header Required | Body | Description |
-|---|---|---|---|---|
-| POST | `/api/webhooks/callback` | `x-webhook-secret` | `{ traceId, workflowKey, provider, status, result?, raw?, error?, meta? }` | Unified callback for all providers |
-| POST | `/api/webhooks/n8n` | `x-webhook-secret` (or legacy `x-n8n-secret`) | `{ type, runId, result?, error? }` | Backward-compatible n8n callback |
+All webhook callbacks are rate-limited and require callback secret.
 
-`type` enum: `completed` \| `error`
+- `POST /n8n`
+- `POST /callback`
 
-`status` enum: `running` \| `completed` \| `failed` \| `waiting_approval`
+Required header:
 
-### Example: Unified Callback
-```bash
-curl -X POST "http://localhost:3000/api/webhooks/callback" \
-  -H "Content-Type: application/json" \
-  -H "x-webhook-secret: whsec_your_generated_key_here" \
-  -d '{
-    "traceId": "trace_123",
-    "workflowKey": "wf_portfolio",
-    "provider": "n8n",
-    "status": "completed",
-    "result": { "summary": "Workflow completed" },
-    "raw": { "providerRunId": "abc123" }
-  }'
+- `x-webhook-secret`
+- legacy accepted on n8n endpoint: `x-n8n-secret`
+
+### `POST /n8n` body (legacy callback)
+
+```json
+{
+  "type": "completed",
+  "runId": "run_123",
+  "result": {}
+}
 ```
 
-### Example: Legacy n8n Callback
-```bash
-curl -X POST "http://localhost:3000/api/webhooks/n8n" \
-  -H "Content-Type: application/json" \
-  -H "x-webhook-secret: whsec_your_generated_key_here" \
-  -d '{
-    "type": "completed",
-    "runId": "run_123",
-    "result": { "summary": "Workflow completed" }
-  }'
+`type`: `completed | error`
+
+### `POST /callback` body (unified callback)
+
+```json
+{
+  "traceId": "trace_123",
+  "workflowKey": "wf_portfolio",
+  "provider": "n8n",
+  "status": "completed",
+  "result": {},
+  "raw": {},
+  "error": null
+}
 ```
+
+`status`: `running | completed | failed | waiting_approval`
+
+---
+
+## Settings (`/api/settings`)
+
+Settings routes are auth-protected and restricted to primary settings user.
+
+- `GET /providers`
+- `POST /providers`
+- `POST /providers/:id/active`
+- `PATCH /providers/:id/model`
+- `DELETE /providers/:id`
+- `POST /fetch-models`
+- `GET /providers/model-capabilities`
+- `GET /runtime-preferences`
+- `PATCH /runtime-preferences`
+- `GET /webhook-secrets`
+- `POST /webhook-secrets`
+- `DELETE /webhook-secrets/:id`

@@ -1,7 +1,25 @@
+/**
+  * icon props type alias.
+  */
 type IconProps = {
   class?: string;
 };
 
+/**
+ * Utility function to shield check icon.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param props - Input value for ShieldCheckIcon.
+ * @returns Return value from ShieldCheckIcon.
+ *
+ * @example
+ * ```typescript
+ * const output = ShieldCheckIcon(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function ShieldCheckIcon(props: IconProps) {
   return (
     <svg
@@ -21,6 +39,21 @@ export function ShieldCheckIcon(props: IconProps) {
   );
 }
 
+/**
+ * Utility function to workflow icon.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param props - Input value for WorkflowIcon.
+ * @returns Return value from WorkflowIcon.
+ *
+ * @example
+ * ```typescript
+ * const output = WorkflowIcon(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function WorkflowIcon(props: IconProps) {
   return (
     <svg

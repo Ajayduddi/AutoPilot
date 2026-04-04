@@ -3,12 +3,30 @@ import { createResource, createSignal, For, Show, onCleanup, onMount } from "sol
 import { ApprovalCard } from "../components/chat/ApprovalCard";
 import { ShieldCheckIcon } from "../components/ui/icons";
 import { approvalsApi } from "../lib/api";
+import { useMobileMenu } from "../context/mobile-menu.context";
 
 export default function Approvals() {
   const [approvals, { refetch }] = createResource(() => approvalsApi.getPending());
   const [resolving, setResolving] = createSignal<string | null>(null);
   const [refreshing, setRefreshing] = createSignal(false);
+  const mobileMenu = useMobileMenu();
 
+  /**
+   * Utility function to resolve.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param id - Input value for resolve.
+   * @param status - Input value for resolve.
+   * @returns Return value from resolve.
+   *
+   * @example
+   * ```typescript
+   * const output = resolve(value, value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function resolve(id: string, status: "approved" | "rejected") {
     setResolving(id);
     try {
@@ -20,9 +38,22 @@ export default function Approvals() {
       setResolving(null);
     }
   }
-
   const pendingCount = () => (approvals() || []).length;
 
+  /**
+   * Utility function to refresh pending.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from refreshPending.
+   *
+   * @example
+   * ```typescript
+   * const output = refreshPending();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function refreshPending() {
     setRefreshing(true);
     try {
@@ -36,7 +67,6 @@ export default function Approvals() {
     const interval = window.setInterval(() => {
       refetch();
     }, 20000);
-
     const onFocus = () => refetch();
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onFocus);
@@ -52,16 +82,21 @@ export default function Approvals() {
     <>
       <Title>Approvals — AutoPilot</Title>
       <main class="flex-1 flex flex-col h-full bg-[#111111] min-w-0">
-        <header class="px-6 py-4 border-b border-neutral-800/20 shrink-0">
+        <header class="px-4 md:px-6 py-4 border-b border-neutral-800/20 shrink-0">
           <div class="max-w-5xl mx-auto flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div class="flex items-center gap-2.5">
-                <h1 class="page-title">Pending Approvals</h1>
-                <span class="text-[10px] font-semibold bg-neutral-900/70 text-neutral-300 border border-neutral-800/70 px-2 py-0.5 rounded-full">
-                  Queue
-                </span>
+            <div class="flex items-center gap-3">
+              <button onClick={() => mobileMenu.toggle()} class="md:hidden p-2 -ml-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800/50 block">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+              </button>
+              <div>
+                <div class="flex items-center gap-2.5">
+                  <h1 class="page-title">Pending Approvals</h1>
+                  <span class="text-[10px] font-semibold bg-neutral-900/70 text-neutral-300 border border-neutral-800/70 px-2 py-0.5 rounded-full hidden sm:inline-block">
+                    Queue
+                  </span>
+                </div>
+                <p class="page-subtitle hidden sm:block">Review and authorize sensitive workflow actions before they execute.</p>
               </div>
-              <p class="page-subtitle">Review and authorize sensitive workflow actions before they execute.</p>
             </div>
 
             <div class="flex items-center gap-2">

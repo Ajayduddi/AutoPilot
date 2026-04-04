@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { NextFunction, Request, Response } from "express";
-import { rateLimit } from "./rate-limit.middleware";
+import { rateLimit } from "../../src/middleware/rate-limit.middleware";
 
 function makeReq(ip = "127.0.0.1"): Request {
   return {

@@ -15,7 +15,7 @@ interface ILLMProvider {
 ## 2. Dynamic Registry Configs
 Adapters are instantly loaded based on the `provider_configs` SQL table:
 - **Default Policy:** The orchestrator fetches the row where `is_default = true`.
-- **Primary Failover:** If no row is selected or the DB lacks configs, it attempts to load local `Ollama` via `OLLAMA_URL` (defaulting to `localhost:11434`) to guarantee zero-downtime execution environments where cloud API keys fall out of scope.
+- **Primary Failover:** If no row is selected or the DB lacks configs, it attempts to load local `Ollama` via runtime config `OLLAMA_URL` from `$AUTOPILOT_HOME/config.json` (defaulting to `localhost:11434`) to guarantee zero-downtime execution environments where cloud API keys fall out of scope.
 
 ## 3. Supported Wrappers
 - **Ollama**: Free, local, private. Perfect for airgapped or on-prem deployments. Assumes `llama3` if model name isn't provided.

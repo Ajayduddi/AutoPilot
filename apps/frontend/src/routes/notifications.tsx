@@ -5,11 +5,14 @@ import { NotificationItem } from "../components/chat/NotificationItem";
 import { NotificationPreviewPanel } from "../components/notifications/NotificationPreviewPanel";
 import { useNotifications, type AppNotificationType, type InboxNotification } from "../context/notifications.context";
 import { usePanel } from "../context/panel.context";
+import { useMobileMenu } from "../context/mobile-menu.context";
 import { chatApi, workflowsApi } from "../lib/api";
 import { buildFollowUpDraft, getNotificationDisplayTitle, getWorkflowInsight } from "../lib/notification-insights";
 
+/**
+  * notification filter type alias.
+  */
 type NotificationFilter = "all" | "unread" | AppNotificationType;
-
 const filterChips: Array<{ key: NotificationFilter; label: string }> = [
   { key: "all", label: "All" },
   { key: "unread", label: "Unread" },
@@ -18,17 +21,62 @@ const filterChips: Array<{ key: NotificationFilter; label: string }> = [
   { key: "system", label: "System" },
 ];
 
+/**
+ * Utility function to is today.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param date - Input value for isToday.
+ * @returns Return value from isToday.
+ *
+ * @example
+ * ```typescript
+ * const output = isToday(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function isToday(date: Date) {
   const now = new Date();
   return date.toDateString() === now.toDateString();
 }
 
+/**
+ * Utility function to is yesterday.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param date - Input value for isYesterday.
+ * @returns Return value from isYesterday.
+ *
+ * @example
+ * ```typescript
+ * const output = isYesterday(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function isYesterday(date: Date) {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   return date.toDateString() === yesterday.toDateString();
 }
 
+/**
+ * Utility function to group label for date.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param value - Input value for groupLabelForDate.
+ * @returns Return value from groupLabelForDate.
+ *
+ * @example
+ * ```typescript
+ * const output = groupLabelForDate(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function groupLabelForDate(value: string) {
   const date = new Date(value);
   if (isToday(date)) return "Today";
@@ -36,14 +84,59 @@ function groupLabelForDate(value: string) {
   return "Earlier";
 }
 
+/**
+ * Utility function to time label.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param value - Input value for timeLabel.
+ * @returns Return value from timeLabel.
+ *
+ * @example
+ * ```typescript
+ * const output = timeLabel(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function timeLabel(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/**
+ * Utility function to date label.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param value - Input value for dateLabel.
+ * @returns Return value from dateLabel.
+ *
+ * @example
+ * ```typescript
+ * const output = dateLabel(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function dateLabel(value: string) {
   return new Date(value).toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
+/**
+ * Utility function to connection meta.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param state - Input value for connectionMeta.
+ * @returns Return value from connectionMeta.
+ *
+ * @example
+ * ```typescript
+ * const output = connectionMeta(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function connectionMeta(state: "connecting" | "live" | "offline") {
   if (state === "live") {
     return { label: "Live", dot: "bg-emerald-500 animate-pulse", text: "text-emerald-300" };
@@ -57,6 +150,7 @@ function connectionMeta(state: "connecting" | "live" | "offline") {
 export default function Notifications() {
   const navigate = useNavigate();
   const { openPanel } = usePanel();
+  const mobileMenu = useMobileMenu();
   const {
     notifications,
     loading,
@@ -82,8 +176,8 @@ export default function Notifications() {
   const [showClearAllModal, setShowClearAllModal] = createSignal(false);
   const [routingId, setRoutingId] = createSignal<string | null>(null);
   const [scrolledAway, setScrolledAway] = createSignal(false);
+  const [isMuted, setIsMuted] = createSignal(false);
   let scrollRef: HTMLDivElement | undefined;
-
   const filteredNotifications = createMemo(() => {
     const filter = activeFilter();
     return notifications().filter((item) => {
@@ -92,7 +186,6 @@ export default function Notifications() {
       return item.type === filter;
     });
   });
-
   const groupedNotifications = createMemo(() => {
     const groups = new Map<string, InboxNotification[]>();
     for (const item of filteredNotifications()) {
@@ -102,7 +195,6 @@ export default function Notifications() {
     }
     return Array.from(groups.entries()).map(([label, items]) => ({ label, items }));
   });
-
   const visibleUnreadIds = createMemo(() =>
     filteredNotifications()
       .filter((item) => !item.read)
@@ -117,7 +209,6 @@ export default function Notifications() {
     if (scrolledAway()) {
       setNewWhileAwayCount((count) => count + 1);
     }
-
     const timer = window.setTimeout(() => {
       setFreshIds((ids) => ids.filter((id) => id !== incomingId));
     }, 2200);
@@ -125,6 +216,20 @@ export default function Notifications() {
     onCleanup(() => window.clearTimeout(timer));
   });
 
+  /**
+   * Utility function to handle scroll.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from handleScroll.
+   *
+   * @example
+   * ```typescript
+   * const output = handleScroll();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   function handleScroll() {
     const top = scrollRef?.scrollTop || 0;
     const away = top > 28;
@@ -132,6 +237,21 @@ export default function Notifications() {
     if (!away) setNewWhileAwayCount(0);
   }
 
+  /**
+   * Utility function to handle preview.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param notification - Input value for handlePreview.
+   * @returns Return value from handlePreview.
+   *
+   * @example
+   * ```typescript
+   * const output = handlePreview(value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handlePreview(notification: InboxNotification) {
     if (!notification.read) {
       markRead(notification.id).catch((err: unknown) => console.error("Mark read failed:", err));
@@ -150,6 +270,22 @@ export default function Notifications() {
     });
   }
 
+  /**
+   * Utility function to handle follow up.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param notification - Input value for handleFollowUp.
+   * @param question - Input value for handleFollowUp.
+   * @returns Return value from handleFollowUp.
+   *
+   * @example
+   * ```typescript
+   * const output = handleFollowUp(value, value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleFollowUp(notification: InboxNotification, question?: string) {
     const insight = getWorkflowInsight(notification);
     const draft = buildFollowUpDraft(notification, insight, question);
@@ -164,6 +300,21 @@ export default function Notifications() {
     }
   }
 
+  /**
+   * Utility function to handle open route.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @param notification - Input value for handleOpenRoute.
+   * @returns Return value from handleOpenRoute.
+   *
+   * @example
+   * ```typescript
+   * const output = handleOpenRoute(value);
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleOpenRoute(notification: InboxNotification) {
     if (!notification.read) {
       markRead(notification.id).catch((err: unknown) => console.error("Mark read failed:", err));
@@ -192,6 +343,20 @@ export default function Notifications() {
     handlePreview(notification);
   }
 
+  /**
+   * Utility function to handle mark all visible.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from handleMarkAllVisible.
+   *
+   * @example
+   * ```typescript
+   * const output = handleMarkAllVisible();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleMarkAllVisible() {
     const ids = visibleUnreadIds();
     if (ids.length === 0) return;
@@ -206,6 +371,20 @@ export default function Notifications() {
     }
   }
 
+  /**
+   * Utility function to handle clear all.
+   *
+   * @remarks
+   * Frontend utility used by the web app UI.
+   * @returns Return value from handleClearAll.
+   *
+   * @example
+   * ```typescript
+   * const output = handleClearAll();
+   * console.log(output);
+   * ```
+   * @throws {Error} Propagates runtime failures from dependent operations.
+   */
   async function handleClearAll() {
     if (notifications().length === 0) return;
 
@@ -220,7 +399,6 @@ export default function Notifications() {
       setClearingAll(false);
     }
   }
-
   const emptyStateCopy = createMemo(() => {
     if (activeFilter() === "unread") return "No unread notifications. You're fully caught up.";
     if (activeFilter() === "workflow_event") return "No workflow events yet. Run activity will land here.";
@@ -228,63 +406,108 @@ export default function Notifications() {
     if (activeFilter() === "system") return "No system notices at the moment.";
     return "No notifications yet. Autonomous workflow results will appear here.";
   });
-
   const liveMeta = createMemo(() => connectionMeta(connectionState()));
 
   return (
     <>
       <Title>Notifications — AutoPilot</Title>
       <main class="flex-1 flex flex-col h-full bg-[#111111] min-w-0">
-        <header class="px-6 py-4 border-b border-neutral-800/20 shrink-0">
+        <header class="px-4 md:px-6 py-4 border-b border-neutral-800/20 shrink-0">
           <div class="max-w-5xl mx-auto flex flex-col gap-4">
-            <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div class="flex items-center gap-2.5">
-                  <h1 class="page-title">Notifications</h1>
-                  <Show when={unreadCount() > 0}>
-                    <span class="text-[10px] font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/20 px-2 py-0.5 rounded-full">
-                      {unreadCount()} unread
-                    </span>
-                  </Show>
+            <div class="flex flex-row items-center justify-between gap-3 w-full">
+              <div class="flex items-center gap-3 min-w-0">
+                <button onClick={() => mobileMenu.toggle()} class="md:hidden p-2 -ml-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800/50 shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                </button>
+                <div class="flex flex-col min-w-0">
+                  <div class="flex items-center gap-2.5">
+                    <h1 class="page-title truncate">Notifications</h1>
+                    <Show when={unreadCount() > 0}>
+                      <span class="text-[10px] font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/20 px-2 py-0.5 rounded-full shrink-0">
+                        {unreadCount()} unread
+                      </span>
+                    </Show>
+                  </div>
+                  <p class="page-subtitle hidden sm:block truncate">Inbox for autonomous workflow results, approvals, and system events.</p>
                 </div>
-                <p class="page-subtitle">Inbox for autonomous workflow results, approvals, and system events.</p>
               </div>
 
-              <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2 md:gap-3 shrink-0">
                 <button
                   onClick={() => enablePush().catch((err: unknown) => console.error("Enable push failed:", err))}
                   disabled={enablingPush() || pushPermission() === "granted"}
-                  class={`text-xs px-3 py-1.5 rounded-lg border transition-all duration-200 ${
+                  class={`p-2 rounded-lg border transition-all duration-200 flex items-center justify-center ${
                     enablingPush() || pushPermission() === "granted"
                       ? "border-neutral-800/60 text-neutral-600 cursor-not-allowed"
-                      : "border-blue-500/30 text-blue-200 hover:text-white hover:border-blue-400/45 hover:bg-blue-500/10"
+                      : "border-blue-500/30 text-blue-400 hover:text-white hover:border-blue-400/45 hover:bg-blue-500/10"
                   }`}
+                  title={pushPermission() === "granted" ? "Push enabled" : "Enable push notifications"}
                 >
-                  {pushPermission() === "granted" ? "Push enabled" : enablingPush() ? "Enabling..." : "Enable push"}
+                  <Show when={enablingPush()} fallback={
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                      <line x1="12" y1="2" x2="12" y2="4" />
+                      <line x1="12" y1="21" x2="12" y2="23" />
+                      <Show when={pushPermission() === "granted"}>
+                        <path d="M9 11l2 2 4-4" />
+                      </Show>
+                    </svg>
+                  }>
+                    <div class="w-4 h-4 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin" />
+                  </Show>
                 </button>
                 <Show when={pushPermission() === "granted"}>
                   <button
                     onClick={() => testPush().catch((err: unknown) => console.error("Push test failed:", err))}
-                    class="text-xs px-3 py-1.5 rounded-lg border border-neutral-700/70 text-neutral-300 hover:text-white hover:border-neutral-500 hover:bg-neutral-900/70 transition-all duration-200"
+                    class="p-2 rounded-lg border border-neutral-700/70 text-neutral-400 hover:text-white hover:border-neutral-500 hover:bg-neutral-900/70 transition-all duration-200 flex items-center justify-center shrink-0"
+                    title="Test push notification"
                   >
-                    Test push
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="22" y1="2" x2="11" y2="13" />
+                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                    </svg>
                   </button>
                   <button
-                    onClick={unmutePushTopics}
-                    class="text-xs px-3 py-1.5 rounded-lg border border-neutral-700/70 text-neutral-300 hover:text-white hover:border-neutral-500 hover:bg-neutral-900/70 transition-all duration-200"
+                    onClick={() => {
+                      setIsMuted(!isMuted());
+                      if (!isMuted()) {
+                        unmutePushTopics();
+                      }
+                    }}
+                    class={`p-2 rounded-lg border transition-all duration-200 flex items-center justify-center ${
+                      isMuted() 
+                        ? "border-amber-500/30 text-amber-400 hover:bg-amber-500/10" 
+                        : "border-neutral-700/70 text-neutral-400 hover:text-white hover:border-neutral-500 hover:bg-neutral-900/70"
+                    }`}
+                    title={isMuted() ? "Unmute all topics" : "Mute all topics"}
                   >
-                    Unmute topics
+                    <Show when={isMuted()} fallback={
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                      </svg>
+                    }>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                        <line x1="23" y1="9" x2="17" y2="15" />
+                        <line x1="17" y1="9" x2="23" y2="15" />
+                      </svg>
+                    </Show>
                   </button>
                 </Show>
-                <div class="flex items-center gap-1.5 rounded-full border border-neutral-800/70 bg-neutral-900/60 px-3 py-1.5">
+                <div class="hidden sm:flex items-center gap-1.5 rounded-full border border-neutral-800/70 bg-neutral-900/60 px-3 py-1.5">
                   <span class={`w-1.5 h-1.5 rounded-full ${liveMeta().dot}`} />
                   <span class={`text-[11px] ${liveMeta().text}`}>{liveMeta().label}</span>
                 </div>
                 <button
                   onClick={() => refresh()}
-                  class="text-xs text-neutral-400 hover:text-white transition-colors"
+                  class="p-2 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800/50 transition-colors flex items-center justify-center hidden sm:flex"
+                  title="Refresh notifications"
                 >
-                  Refresh
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <polyline points="3 3 3 8 8 8" />
+                  </svg>
                 </button>
               </div>
             </div>

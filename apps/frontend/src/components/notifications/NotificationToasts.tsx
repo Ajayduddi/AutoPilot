@@ -1,6 +1,5 @@
 import { For, Show } from "solid-js";
 import { useNotifications } from "../../context/notifications.context";
-
 const toastStyles = {
   workflow_event: {
     label: "Workflow",
@@ -38,6 +37,20 @@ const toastStyles = {
   },
 } as const;
 
+/**
+ * Utility function to notification toasts.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @returns Return value from NotificationToasts.
+ *
+ * @example
+ * ```typescript
+ * const output = NotificationToasts();
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function NotificationToasts() {
   const { toasts, dismissToast } = useNotifications();
 

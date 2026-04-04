@@ -1,11 +1,29 @@
 import { For, Show } from "solid-js";
 
+/**
+ * Interface describing detail panel props shape.
+ */
 interface DetailPanelProps {
   title?: string;
   description?: string;
   metadata?: Record<string, string>;
 }
 
+/**
+ * Utility function to detail panel.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param props - Input value for DetailPanel.
+ * @returns Return value from DetailPanel.
+ *
+ * @example
+ * ```typescript
+ * const output = DetailPanel(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function DetailPanel(props: DetailPanelProps) {
   const entries = () => Object.entries(props.metadata || {});
 

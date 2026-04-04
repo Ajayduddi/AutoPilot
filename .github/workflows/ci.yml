@@ -6,6 +6,32 @@ on:
     branches: [main]
 
 jobs:
+  pr-size-guard:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Fetch base branch
+        run: git fetch origin "${{ github.base_ref }}" --depth=1
+
+      - name: Enforce PR size guard
+        env:
+          PR_MAX_CHANGED_FILES: "180"
+          PR_MAX_CROSS_SURFACE_FILES: "120"
+        run: bun run ci:check-pr-size
+
   quality:
     runs-on: ubuntu-latest
     steps:
@@ -23,8 +49,135 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Lint
+        run: bun --filter=backend run lint
+
       - name: Build
         run: bun run build
 
       - name: Test
         run: bun run test
+
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Dependency Audit (SCA)
+        run: bun audit
+
+  backend-migration-preflight:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chat_automation
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/chat_automation
+      NODE_ENV: test
+      AUTH_COOKIE_SECRET: test_secret_for_ci_only
+      FRONTEND_ORIGIN: http://localhost:5173
+      PROVIDER_API_KEY_ENCRYPTION_KEY: this_is_a_ci_only_encryption_key_32_chars_min
+      WEBHOOK_CALLBACK_SECRET: ci_webhook_secret
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Apply migrations
+        run: bun --filter=backend run db:migrate
+
+      - name: DB preflight
+        run: bun --filter=backend run db:preflight
+
+  backend-e2e-smoke:
+    runs-on: ubuntu-latest
+    needs: [quality]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chat_automation
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/chat_automation
+      NODE_ENV: test
+      AUTH_COOKIE_SECRET: test_secret_for_ci_only
+      FRONTEND_ORIGIN: http://localhost:5173
+      PROVIDER_API_KEY_ENCRYPTION_KEY: this_is_a_ci_only_encryption_key_32_chars_min
+      WEBHOOK_CALLBACK_SECRET: ci_webhook_secret
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Apply migrations
+        run: bun --filter=backend run db:migrate
+
+      - name: Start backend
+        run: |
+          cd apps/backend
+          bun run start &
+          echo $! > /tmp/backend.pid
+
+      - name: Wait for health endpoint
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://localhost:3000/health > /tmp/health.json; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend health check failed"
+          exit 1
+
+      - name: Smoke check readiness
+        run: curl -fsS http://localhost:3000/health/ready
+
+      - name: Stop backend
+        if: always()
+        run: |
+          if [ -f /tmp/backend.pid ]; then
+            kill "$(cat /tmp/backend.pid)" || true
+          fi

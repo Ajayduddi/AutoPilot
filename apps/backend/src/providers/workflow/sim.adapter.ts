@@ -1,5 +1,10 @@
-import type { WorkflowProvider, ProviderCapabilities } from '@chat-automation/shared';
-import { PROVIDER_CAPABILITIES } from '@chat-automation/shared';
+/**
+ * @fileoverview providers/workflow/sim.adapter.
+ *
+ * External provider adapters and interfaces for LLMs and workflow engines.
+ */
+import type { WorkflowProvider, ProviderCapabilities } from '@autopilot/shared';
+import { PROVIDER_CAPABILITIES } from '@autopilot/shared';
 import { CustomAdapter } from './custom.adapter';
 
 // ─────────────────────────────────────────────────────────────
@@ -13,7 +18,16 @@ import { CustomAdapter } from './custom.adapter';
 //  (e.g. Sim-specific auth, response parsing, SDK support).
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * Sim provider adapter aliasing custom webhook behavior with Sim capabilities.
+ *
+ * @example
+ * ```typescript
+ * const adapter = new SimAdapter();
+ * console.log(adapter.name); // "sim"
+ * ```
+ */
 export class SimAdapter extends CustomAdapter {
-  override readonly name: WorkflowProvider = 'sim';
-  override readonly capabilities: ProviderCapabilities = PROVIDER_CAPABILITIES.sim;
+    override readonly name: WorkflowProvider = 'sim';
+    override readonly capabilities: ProviderCapabilities = PROVIDER_CAPABILITIES.sim;
 }

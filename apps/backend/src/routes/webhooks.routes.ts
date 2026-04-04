@@ -1,3 +1,8 @@
+/**
+ * @fileoverview routes/webhooks.routes.
+ *
+ * HTTP endpoints, request validation, and response composition for API resources.
+ */
 import { Router } from 'express';
 import { requireWebhookSecret } from '../middleware/webhook.middleware';
 import { validate } from '../middleware/validate.middleware';
@@ -12,17 +17,17 @@ const router = Router();
 const webhookRateLimit = rateLimit({ keyPrefix: 'webhook-callbacks', limit: 120, windowMs: 60_000 });
 
 async function notifyAutonomousWorkflowResult(params: {
-  userId: string;
-  runId: string;
-  workflowKey: string;
-  provider: string;
-  traceId: string;
-  status: 'completed' | 'failed';
+    userId: string;
+    runId: string;
+    workflowKey: string;
+    provider: string;
+    traceId: string;
+    status: 'completed' | 'failed';
   result?: unknown;
   raw?: unknown;
   error?: unknown;
 }) {
-  const summaryData = await WorkflowSummaryService.summarizeCallback({
+    const summaryData = await WorkflowSummaryService.summarizeCallback({
     workflowKey: params.workflowKey,
     provider: params.provider,
     status: params.status,
@@ -34,8 +39,8 @@ async function notifyAutonomousWorkflowResult(params: {
   });
 
   await NotificationService.notify(params.userId, {
-    type: params.status === 'completed' ? 'workflow_event' : 'system',
-    title: params.status === 'completed'
+        type: params.status === 'completed' ? 'workflow_event' : 'system',
+        title: params.status === 'completed'
       ? `Workflow completed: ${params.workflowKey}`
       : `Workflow failed: ${params.workflowKey}`,
     message: summaryData.summary,
@@ -47,9 +52,9 @@ async function notifyAutonomousWorkflowResult(params: {
 // ── n8n callback endpoint (backward-compatible) ─────────────────────────────
 router.post('/n8n', webhookRateLimit, requireWebhookSecret, validate(n8nCallbackSchema), async (req, res, next) => {
   try {
-    const payload = req.body;
+        const payload = req.body;
 
-    const run = await WorkflowService.getRunById(payload.runId);
+        const run = await WorkflowService.getRunById(payload.runId);
     if (!run) {
       return res.status(404).json({ error: 'Run ID not found' });
     }
@@ -106,12 +111,12 @@ router.post('/n8n', webhookRateLimit, requireWebhookSecret, validate(n8nCallback
 // Accepts callbacks from any provider using the standard callback shape
 router.post('/callback', webhookRateLimit, requireWebhookSecret, validate(unifiedCallbackSchema), async (req, res, next) => {
   try {
-    const payload = req.body;
-    const incomingTraceId = typeof payload.traceId === 'string' ? payload.traceId.trim() : '';
+        const payload = req.body;
+        const incomingTraceId = typeof payload.traceId === 'string' ? payload.traceId.trim() : '';
 
     // Preferred path: look up existing run by app-generated trace_id.
     // Fallback path: if trace_id is missing, create an external autonomous run.
-    let run = incomingTraceId
+        let run = incomingTraceId
       ? await WorkflowService.getRunByTraceId(incomingTraceId)
       : null;
 
@@ -130,8 +135,17 @@ router.post('/callback', webhookRateLimit, requireWebhookSecret, validate(unifie
       return res.status(404).json({ error: 'No run found for trace_id' });
     }
 
-    const normalizedOutput = payload.result
-      ? { summary: 'Workflow completed', data: payload.result, items: [] }
+        const normalizedOutput = payload.result
+      ? {
+          summary: payload.summary || 'Workflow completed',
+          data: {
+            ...(payload.result || {}),
+            confidence: payload.confidence,
+            nextSuggestedAction: payload.nextSuggestedAction,
+            planStepId: payload.planStepId,
+          },
+          items: [],
+        }
       : null;
 
     await WorkflowService.updateRunStatus(
@@ -143,20 +157,20 @@ router.post('/callback', webhookRateLimit, requireWebhookSecret, validate(unifie
     );
 
     if (run.threadId) {
-      const msg = payload.status === 'completed'
+            const msg = payload.status === 'completed'
         ? 'Workflow execution finished successfully.'
         : payload.status === 'failed'
           ? `Workflow failed: ${JSON.stringify(payload.error)}`
           : `Workflow status updated: ${payload.status}`;
       await ChatService.addMessage(run.threadId, 'assistant', msg);
     } else {
-      const isTerminal = payload.status === 'completed' || payload.status === 'failed';
-      const shouldNotify = NotificationService.shouldNotifyWorkflowRun({
+            const isTerminal = payload.status === 'completed' || payload.status === 'failed';
+            const shouldNotify = NotificationService.shouldNotifyWorkflowRun({
         triggerSource: run.triggerSource,
         threadId: run.threadId,
       });
       if (isTerminal && shouldNotify) {
-        const terminalStatus: 'completed' | 'failed' = payload.status === 'failed' ? 'failed' : 'completed';
+                const terminalStatus: 'completed' | 'failed' = payload.status === 'failed' ? 'failed' : 'completed';
         await notifyAutonomousWorkflowResult({
           userId: run.userId,
           runId: run.id,

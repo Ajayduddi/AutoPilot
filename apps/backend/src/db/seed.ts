@@ -1,9 +1,33 @@
+/**
+ * @fileoverview Database seed runner for local/dev bootstrap.
+ *
+ * Seeds baseline data required to use the platform quickly after migrations:
+ * - An admin user account
+ * - Representative workflows across supported providers
+ *
+ * @remarks
+ * This script is idempotent for seeded keys/emails through upsert logic.
+ * It is intended for development environments, not production data loading.
+ */
 import { db } from './index';
 import { users, workflows } from './schema';
 import { randomUUID } from 'crypto';
 import * as dotenv from 'dotenv';
 dotenv.config({ path: '../../.env' });
 
+/**
+ * Seeds baseline users and workflows into the database.
+ *
+ * @remarks
+ * - Uses conflict-aware writes to avoid duplicate records on repeated runs.
+ * - Refreshes mutable workflow fields (`description`, `tags`, `enabled`, etc.) when keys already exist.
+ * - Exits process with status `0` on success and `1` on failure.
+ *
+ * @example
+ * ```bash
+ * bun --filter backend run db:seed
+ * ```
+ */
 async function seed() {
   console.log('🌱 Seeding database...');
 

@@ -1,10 +1,15 @@
+/**
+ * @fileoverview providers/workflow/provider.interface.
+ *
+ * External provider adapters and interfaces for LLMs and workflow engines.
+ */
 import type {
   Workflow,
   WorkflowProvider,
   WorkflowExecutionRequest,
   WorkflowExecutionResult,
   ProviderCapabilities,
-} from '@chat-automation/shared';
+} from '@autopilot/shared';
 import type {
   ValidationResult,
   NormalizedProviderResult,

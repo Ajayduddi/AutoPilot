@@ -5,6 +5,7 @@ import { StreamingCursor } from "./StreamingCursor";
 import type { ActionItem, AssistantBlock, MessageState, TaskCardBlock, WorkflowStatusBlock } from "./types";
 
 interface AssistantMessageProps {
+  messageId?: string;
   content?: string;
   textScale?: number;
   blocks?: AssistantBlock[];
@@ -15,6 +16,7 @@ interface AssistantMessageProps {
   onTaskOpen?: (block: TaskCardBlock) => void;
   onWorkflowOpen?: (block: WorkflowStatusBlock) => void;
   onAction?: (action: ActionItem) => void | Promise<void>;
+  onQuestionAnswer?: (payload: { messageId?: string; questionId: string; optionId?: string; valueToSend: string }) => void | Promise<void>;
 }
 
 function IconCopy() {
@@ -149,6 +151,7 @@ export function AssistantMessage(props: AssistantMessageProps) {
                 onTaskOpen={props.onTaskOpen}
                 onWorkflowOpen={props.onWorkflowOpen}
                 onAction={props.onAction}
+                onQuestionAnswer={props.onQuestionAnswer}
               />
             </Show>
           </Show>

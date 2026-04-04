@@ -14,8 +14,24 @@ import LoginPage from "./routes/login";
 import OnboardingPage from "./routes/onboarding";
 import { NotificationsProvider } from "./context/notifications.context";
 import { AuthProvider, useAuth } from "./context/auth.context";
+import { MobileMenuProvider } from "./context/mobile-menu.context";
 import "./app.css";
 
+/**
+ * Utility function to global error fallback.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param err - Input value for GlobalErrorFallback.
+ * @returns Return value from GlobalErrorFallback.
+ *
+ * @example
+ * ```typescript
+ * const output = GlobalErrorFallback(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function GlobalErrorFallback(err: Error) {
   return (
     <div class="flex-1 flex flex-col items-center justify-center h-screen gap-4 text-center px-6">
@@ -32,11 +48,25 @@ function GlobalErrorFallback(err: Error) {
   );
 }
 
+/**
+ * Utility function to root shell.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param props - Input value for RootShell.
+ * @returns Return value from RootShell.
+ *
+ * @example
+ * ```typescript
+ * const output = RootShell(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function RootShell(props: { children: any }) {
   const location = useLocation();
   const navigate = useNavigate();
   const auth = useAuth();
-
   const isAuthRoute = () => location.pathname === "/login" || location.pathname === "/onboarding";
 
   createEffect(() => {
@@ -68,12 +98,14 @@ function RootShell(props: { children: any }) {
         }
       >
       <NotificationsProvider>
-        <AppLayout>
-          <Sidebar />
-          <ErrorBoundary fallback={(err) => GlobalErrorFallback(err)}>
-            {props.children}
-          </ErrorBoundary>
-        </AppLayout>
+        <MobileMenuProvider>
+          <AppLayout>
+            <Sidebar />
+            <ErrorBoundary fallback={(err) => GlobalErrorFallback(err)}>
+              {props.children}
+            </ErrorBoundary>
+          </AppLayout>
+        </MobileMenuProvider>
       </NotificationsProvider>
       </Show>
     </Show>

@@ -1,5 +1,8 @@
 import { Show, createMemo, createSignal } from "solid-js";
 
+/**
+ * Interface describing approval card props shape.
+ */
 interface ApprovalCardProps {
   id: string;
   summary: string;
@@ -12,13 +15,27 @@ interface ApprovalCardProps {
   onReject?: () => void;
   onViewDetails?: () => void;
 }
-
 const riskConfig = {
   low: { label: "Low Risk", class: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
   medium: { label: "Medium Risk", class: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
   high: { label: "High Risk", class: "text-red-400 bg-red-500/10 border-red-500/20" },
 };
 
+/**
+ * Utility function to approval card.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param props - Input value for ApprovalCard.
+ * @returns Return value from ApprovalCard.
+ *
+ * @example
+ * ```typescript
+ * const output = ApprovalCard(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function ApprovalCard(props: ApprovalCardProps) {
   const [showDetails, setShowDetails] = createSignal(false);
   const risk = () => riskConfig[props.riskLevel || "medium"];

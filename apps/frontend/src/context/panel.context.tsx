@@ -1,7 +1,9 @@
 import { JSX, createSignal, createContext, useContext, ParentComponent } from "solid-js";
 
+/**
+  * panel content type alias.
+  */
 type PanelContent = { title: string; content: JSX.Element } | null;
-
 const PanelContext = createContext<{
   panel: () => PanelContent;
   openPanel: (content: PanelContent) => void;
@@ -11,7 +13,6 @@ const PanelContext = createContext<{
   openPanel: () => {},
   closePanel: () => {},
 });
-
 export const PanelProvider: ParentComponent = (props) => {
   const [panel, setPanel] = createSignal<PanelContent>(null);
   return (
@@ -24,5 +25,4 @@ export const PanelProvider: ParentComponent = (props) => {
     </PanelContext.Provider>
   );
 };
-
 export const usePanel = () => useContext(PanelContext);

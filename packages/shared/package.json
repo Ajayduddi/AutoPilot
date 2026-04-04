@@ -1,7 +1,8 @@
 {
-  "name": "@chat-automation/shared",
-  "version": "1.0.0",
+  "name": "@autopilot/shared",
+  "version": "0.1.0",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "license": "Apache-2.0",
   "private": true
 }

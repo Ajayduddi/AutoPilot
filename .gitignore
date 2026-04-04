@@ -21,6 +21,7 @@ dist/
 out/
 .output/
 .vinxi/
+.autopilot
 
 # TypeScript
 *.tsbuildinfo
@@ -49,3 +50,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
+.codex
+.autopilot/
+apps/frontend/app.config.timestamp_*.js

@@ -1,3 +1,8 @@
+/**
+ * @fileoverview repositories/workflow.repo.
+ *
+ * Database access utilities and persistence workflows for backend entities.
+ */
 import { eq, and, desc, ilike, inArray, SQL, lt } from 'drizzle-orm';
 import { db } from '../db';
 import { workflows, workflowRuns } from '../db/schema';
@@ -6,12 +11,13 @@ import type {
   WorkflowVisibility,
   WorkflowRunStatus,
   WorkflowTriggerSource,
-} from '@chat-automation/shared';
+} from '@autopilot/shared';
 
 // ─────────────────────────────────────────────────────────────
 //  Types for repo inputs
 // ─────────────────────────────────────────────────────────────
 
+/** Input payload for inserting a new workflow definition row. */
 export interface CreateWorkflowInput {
   id: string;
   key: string;
@@ -35,6 +41,9 @@ export interface CreateWorkflowInput {
   version?: number;
 }
 
+/**
+ * UpdateWorkflowInput type contract.
+ */
 export interface UpdateWorkflowInput {
   key?: string;
   name?: string;
@@ -56,6 +65,9 @@ export interface UpdateWorkflowInput {
   version?: number;
 }
 
+/**
+ * CreateRunInput type contract.
+ */
 export interface CreateRunInput {
   id: string;
   workflowId: string;
@@ -69,6 +81,9 @@ export interface CreateRunInput {
   status?: WorkflowRunStatus;
 }
 
+/**
+ * WorkflowFilterOptions type contract.
+ */
 export interface WorkflowFilterOptions {
   provider?: WorkflowProvider;
   visibility?: WorkflowVisibility;
@@ -82,9 +97,18 @@ export interface WorkflowFilterOptions {
 //  Repository
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * Repository for workflow definitions and workflow-run persistence.
+ *
+ * @example
+ * ```typescript
+ * const workflow = await WorkflowRepo.getWorkflowByKey("send_email");
+ * ```
+ */
 export const WorkflowRepo = {
   // ── Workflow CRUD ────────────────────────────────────────────
 
+  /** Inserts a new workflow definition row. */
   async createWorkflow(data: CreateWorkflowInput) {
     const [workflow] = await db.insert(workflows).values({
       ...data,
@@ -123,18 +147,21 @@ export const WorkflowRepo = {
     return workflow;
   },
 
+  /** Fetches a workflow by primary ID. */
   async getWorkflowById(id: string) {
     return await db.query.workflows.findFirst({
       where: eq(workflows.id, id),
     });
   },
 
+  /** Fetches a workflow by unique key. */
   async getWorkflowByKey(key: string) {
     return await db.query.workflows.findFirst({
       where: eq(workflows.key, key),
     });
   },
 
+  /** Lists workflows using optional filter criteria. */
   async getAllWorkflows(filters?: WorkflowFilterOptions) {
     const conditions: SQL[] = [];
 
@@ -171,6 +198,7 @@ export const WorkflowRepo = {
     return this.getAllWorkflows({ enabled: true, archived: false });
   },
 
+  /** Updates workflow fields by ID. */
   async updateWorkflow(id: string, data: UpdateWorkflowInput) {
     const [workflow] = await db.update(workflows)
       .set({ ...data, updatedAt: new Date() })
@@ -179,10 +207,12 @@ export const WorkflowRepo = {
     return workflow;
   },
 
+  /** Marks a workflow as archived and disables execution. */
   async archiveWorkflow(id: string) {
     return this.updateWorkflow(id, { archived: true, enabled: false });
   },
 
+  /** Permanently deletes a workflow by ID. */
   async deleteWorkflow(id: string) {
     const [workflow] = await db.delete(workflows)
       .where(eq(workflows.id, id))
@@ -199,6 +229,7 @@ export const WorkflowRepo = {
 
   // ── Workflow Runs ────────────────────────────────────────────
 
+  /** Inserts a workflow run row with default queued status. */
   async createRun(data: CreateRunInput) {
     const [run] = await db.insert(workflowRuns).values({
       ...data,
@@ -207,18 +238,29 @@ export const WorkflowRepo = {
     return run;
   },
 
+  /** Fetches a workflow run by run ID. */
   async getRunById(runId: string) {
     return await db.query.workflowRuns.findFirst({
       where: eq(workflowRuns.id, runId),
     });
   },
 
+  /** Fetches workflow runs for a list of run IDs. */
+  async getRunsByIds(runIds: string[]) {
+    if (!runIds.length) return [];
+    return await db.query.workflowRuns.findMany({
+      where: inArray(workflowRuns.id, runIds),
+    });
+  },
+
+  /** Fetches a workflow run by trace ID. */
   async getRunByTraceId(traceId: string) {
     return await db.query.workflowRuns.findFirst({
       where: eq(workflowRuns.traceId, traceId),
     });
   },
 
+  /** Lists workflow runs for a workflow, newest first, with cursor-style cutoff. */
   async getRunsByWorkflowId(workflowId: string, limit = 50, before?: string) {
     const where = before
       ? and(eq(workflowRuns.workflowId, workflowId), lt(workflowRuns.createdAt, new Date(before)))

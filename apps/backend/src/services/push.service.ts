@@ -1,8 +1,13 @@
+/**
+ * @fileoverview services/push.service.
+ *
+ * Web Push subscription management and notification delivery orchestration.
+ */
 import webpush from 'web-push';
 import { PushSubscriptionRepo, type PushSubscriptionInput } from '../repositories/push-subscription.repo';
 
 type PushPayload = {
-  title: string;
+    title: string;
   body?: string;
   url?: string;
   tag?: string;
@@ -22,15 +27,15 @@ function ensureVapidKeys() {
     };
   }
 
-  const publicKey = process.env.VAPID_PUBLIC_KEY?.trim();
-  const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
-  const subject = process.env.VAPID_SUBJECT?.trim() || 'mailto:admin@autopilot.local';
+    const publicKey = process.env.VAPID_PUBLIC_KEY?.trim();
+    const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
+    const subject = process.env.VAPID_SUBJECT?.trim() || 'mailto:admin@autopilot.local';
 
-  let resolvedPublicKey: string = publicKey || '';
-  let resolvedPrivateKey: string = privateKey || '';
+    let resolvedPublicKey: string = publicKey || '';
+    let resolvedPrivateKey: string = privateKey || '';
 
   if (!resolvedPublicKey || !resolvedPrivateKey) {
-    const generated = webpush.generateVAPIDKeys();
+        const generated = webpush.generateVAPIDKeys();
     resolvedPublicKey = generated.publicKey;
     resolvedPrivateKey = generated.privateKey;
     generatedPublicKey = resolvedPublicKey;
@@ -44,26 +49,29 @@ function ensureVapidKeys() {
   return { publicKey: resolvedPublicKey, privateKey: resolvedPrivateKey };
 }
 
+/**
+ * Coordinates VAPID key setup, push subscription persistence, and fan-out delivery.
+ */
 export class PushService {
-  static getPublicKey() {
+    static getPublicKey() {
     return ensureVapidKeys().publicKey;
   }
 
-  static async subscribe(userId: string, subscription: PushSubscriptionInput) {
+    static async subscribe(userId: string, subscription: PushSubscriptionInput) {
     ensureVapidKeys();
     return PushSubscriptionRepo.upsertForUser(userId, subscription);
   }
 
-  static async unsubscribe(endpoint: string) {
+    static async unsubscribe(endpoint: string) {
     return PushSubscriptionRepo.revokeByEndpoint(endpoint);
   }
 
-  static async sendToUser(userId: string, payload: PushPayload) {
+    static async sendToUser(userId: string, payload: PushPayload) {
     ensureVapidKeys();
-    const subscriptions = await PushSubscriptionRepo.getActiveByUser(userId);
+        const subscriptions = await PushSubscriptionRepo.getActiveByUser(userId);
     if (subscriptions.length === 0) return;
 
-    const message = JSON.stringify({
+        const message = JSON.stringify({
       title: payload.title,
       body: payload.body || '',
       url: payload.url || '/notifications',
@@ -74,7 +82,7 @@ export class PushService {
     });
 
     await Promise.all(subscriptions.map(async (sub) => {
-      const pushSubscription = {
+            const pushSubscription = {
         endpoint: sub.endpoint,
         keys: {
           p256dh: sub.p256dh,
@@ -86,7 +94,7 @@ export class PushService {
         await webpush.sendNotification(pushSubscription, message, { TTL: 60 });
         await PushSubscriptionRepo.touch(sub.endpoint);
       } catch (err: any) {
-        const status = err?.statusCode;
+                const status = err?.statusCode;
         if (status === 404 || status === 410) {
           await PushSubscriptionRepo.revokeByEndpoint(sub.endpoint);
           return;

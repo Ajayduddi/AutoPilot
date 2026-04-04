@@ -1,11 +1,16 @@
+/**
+ * @fileoverview providers/workflow/make.adapter.
+ *
+ * External provider adapters and interfaces for LLMs and workflow engines.
+ */
 import type {
   Workflow,
   WorkflowExecutionRequest,
   WorkflowExecutionResult,
   ProviderCapabilities,
   WorkflowProvider,
-} from '@chat-automation/shared';
-import { PROVIDER_CAPABILITIES } from '@chat-automation/shared';
+} from '@autopilot/shared';
+import { PROVIDER_CAPABILITIES } from '@autopilot/shared';
 import { BaseWebhookAdapter } from './base.adapter';
 import type { WorkflowProviderAdapter } from './provider.interface';
 import type { NormalizedProviderResult, ValidationResult } from './types';
@@ -28,15 +33,24 @@ import type { NormalizedProviderResult, ValidationResult } from './types';
 //  - No health check
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * Workflow adapter for Make.com webhook/scenario triggers.
+ *
+ * @example
+ * ```typescript
+ * const adapter = new MakeAdapter();
+ * const validation = await adapter.validateConfig(workflow);
+ * ```
+ */
 export class MakeAdapter extends BaseWebhookAdapter implements WorkflowProviderAdapter {
-  readonly name: WorkflowProvider = 'make';
-  readonly capabilities: ProviderCapabilities = PROVIDER_CAPABILITIES.make;
+    readonly name: WorkflowProvider = 'make';
+    readonly capabilities: ProviderCapabilities = PROVIDER_CAPABILITIES.make;
 
-  async validateConfig(workflow: Workflow): Promise<ValidationResult> {
-    const base = await super.validateConfig(workflow);
+    async validateConfig(workflow: Workflow): Promise<ValidationResult> {
+        const base = await super.validateConfig(workflow);
 
     if (workflow.executionEndpoint) {
-      const isMakeUrl = workflow.executionEndpoint.includes('make.com')
+            const isMakeUrl = workflow.executionEndpoint.includes('make.com')
         || workflow.executionEndpoint.includes('integromat.com')
         || workflow.executionEndpoint.includes('hook.eu1.make.com')
         || workflow.executionEndpoint.includes('hook.us1.make.com');
@@ -53,11 +67,11 @@ export class MakeAdapter extends BaseWebhookAdapter implements WorkflowProviderA
     workflow: Workflow,
     request: WorkflowExecutionRequest,
   ): Promise<WorkflowExecutionResult> {
-    const endpoint = workflow.executionEndpoint!;
-    const startedAt = new Date().toISOString();
+        const endpoint = workflow.executionEndpoint!;
+        const startedAt = new Date().toISOString();
 
     // Make.com expects JSON body
-    const payload = {
+        const payload = {
       ...request.input,
       _traceId: request.traceId,
       _workflowKey: request.workflowKey,
@@ -65,15 +79,15 @@ export class MakeAdapter extends BaseWebhookAdapter implements WorkflowProviderA
       _source: request.source,
     };
 
-    const authHeaders = this.buildAuthHeaders(workflow);
+        const authHeaders = this.buildAuthHeaders(workflow);
 
     try {
-      let data: unknown;
-      const headers = { ...authHeaders, 'x-trace-id': request.traceId };
+            let data: unknown;
+            const headers = { ...authHeaders, 'x-trace-id': request.traceId };
 
       switch (workflow.httpMethod) {
         case 'GET': {
-          const queryParams = {
+                    const queryParams = {
             ...request.input,
             _traceId: request.traceId,
             _workflowKey: request.workflowKey,
@@ -98,7 +112,7 @@ export class MakeAdapter extends BaseWebhookAdapter implements WorkflowProviderA
           break;
       }
 
-      const normalized = this.normalizeResponse(data, workflow);
+            const normalized = this.normalizeResponse(data, workflow);
 
       return {
         runId: request.traceId,
@@ -110,13 +124,13 @@ export class MakeAdapter extends BaseWebhookAdapter implements WorkflowProviderA
         error: null,
         meta: {
           startedAt,
-          finishedAt: normalized.status === 'completed' ? new Date().toISOString() : null,
+                    finishedAt: normalized.status === 'completed' ? new Date().toISOString() : null,
           triggerSource: request.source,
           providerRunId: normalized.providerRunId,
         },
       };
     } catch (err) {
-      const normalized = this.normalizeError(err, workflow);
+            const normalized = this.normalizeError(err, workflow);
       return {
         runId: request.traceId,
         workflowKey: request.workflowKey,
@@ -143,12 +157,12 @@ export class MakeAdapter extends BaseWebhookAdapter implements WorkflowProviderA
    * We treat `accepted: true` without data as "running" (scenario is executing).
    */
   normalizeResponse(raw: unknown, _workflow: Workflow): NormalizedProviderResult {
-    const rawObj = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+        const rawObj = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
 
-    const isAcceptedOnly = rawObj.accepted === true
+        const isAcceptedOnly = rawObj.accepted === true
       && Object.keys(rawObj).filter(k => k !== 'accepted').length === 0;
 
-    let items: unknown[] = [];
+        let items: unknown[] = [];
     if (Array.isArray(raw)) items = raw;
     else if (Array.isArray(rawObj.data)) items = rawObj.data;
 
@@ -166,7 +180,7 @@ export class MakeAdapter extends BaseWebhookAdapter implements WorkflowProviderA
         items,
       },
       raw: rawObj,
-      providerRunId: typeof rawObj.executionId === 'string' ? rawObj.executionId : null,
+            providerRunId: typeof rawObj.executionId === 'string' ? rawObj.executionId : null,
     };
   }
 }

@@ -1,64 +1,70 @@
+/**
+ * @fileoverview services/workflow-summary.service.
+ *
+ * Domain and orchestration logic that coordinates repositories, providers, and policy rules.
+ */
 import { LLMFactory } from '../providers/llm/llm.factory';
+const MAX_JSON_PREVIEW = 6000;const AI_TIMEOUT_MS = 7000;
 
-const MAX_JSON_PREVIEW = 6000;
-const AI_TIMEOUT_MS = 7000;
-
+/**
+ * CallbackSummaryInput type contract.
+ */
 export interface CallbackSummaryInput {
-  workflowKey: string;
-  provider: string;
-  status: 'completed' | 'failed';
-  runId: string;
-  traceId: string;
+    workflowKey: string;
+    provider: string;
+    status: 'completed' | 'failed';
+    runId: string;
+    traceId: string;
   result?: unknown;
   raw?: unknown;
   error?: unknown;
 }
 
+/**
+ * WorkflowNotificationSummary type contract.
+ */
 export interface WorkflowNotificationSummary {
-  kind: 'autonomous_workflow_result';
-  summary: string;
-  bullets: string[];
-  rawPreview: string;
-  suggestedQuestions: string[];
-  workflowKey: string;
-  provider: string;
-  status: 'completed' | 'failed';
-  runId: string;
-  traceId: string;
-  generatedBy: 'ai' | 'fallback';
+    kind: 'autonomous_workflow_result';
+    summary: string;
+    bullets: string[];
+    rawPreview: string;
+    suggestedQuestions: string[];
+    workflowKey: string;
+    provider: string;
+    status: 'completed' | 'failed';
+    runId: string;
+    traceId: string;
+    generatedBy: 'ai' | 'fallback';
 }
-
 function stringifySafe(value: unknown, max = MAX_JSON_PREVIEW): string {
   if (value === undefined || value === null) return 'null';
   try {
-    const str = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+        const str = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
     if (str.length <= max) return str;
     return `${str.slice(0, max)}\n... (truncated)`;
   } catch {
-    const fallback = String(value);
+        const fallback = String(value);
     return fallback.length <= max ? fallback : `${fallback.slice(0, max)}\n... (truncated)`;
   }
 }
-
 function firstNonEmpty(...values: unknown[]): string {
   for (const value of values) {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return '';
 }
-
 function makeFallback(input: CallbackSummaryInput, rawPreview: string): WorkflowNotificationSummary {
-  const statusText = input.status === 'completed' ? 'completed successfully' : 'failed';
-  const summary = input.status === 'completed'
+    const statusText = input.status === 'completed' ? 'completed successfully' : 'failed';
+    const summary = input.status === 'completed'
     ? `Autonomous workflow '${input.workflowKey}' completed. Review the key output and follow up in chat for deeper analysis.`
     : `Autonomous workflow '${input.workflowKey}' failed. Review the error details and follow up in chat for debugging help.`;
 
-  const topLine = firstNonEmpty(
+    const topLine = firstNonEmpty(
     typeof input.error === 'string' ? input.error : '',
     typeof input.result === 'string' ? input.result : '',
   );
 
-  const bullets = [
+    const bullets = [
     `Run ${input.runId.slice(0, 10)}… ${statusText}.`,
     `Provider: ${input.provider}.`,
     topLine ? `Top signal: ${topLine.slice(0, 160)}${topLine.length > 160 ? '…' : ''}` : `Trace: ${input.traceId}.`,
@@ -82,12 +88,11 @@ function makeFallback(input: CallbackSummaryInput, rawPreview: string): Workflow
     generatedBy: 'fallback',
   };
 }
-
 function extractJsonObject(text: string): Record<string, unknown> | null {
-  const trimmed = text.trim();
-  const jsonCandidate = trimmed.match(/\{[\s\S]*\}/)?.[0] ?? trimmed;
+    const trimmed = text.trim();
+    const jsonCandidate = trimmed.match(/\{[\s\S]*\}/)?.[0] ?? trimmed;
   try {
-    const parsed = JSON.parse(jsonCandidate);
+        const parsed = JSON.parse(jsonCandidate);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>;
     }
@@ -96,7 +101,6 @@ function extractJsonObject(text: string): Record<string, unknown> | null {
   }
   return null;
 }
-
 function sanitizeStringList(value: unknown, limit = 4): string[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -104,10 +108,9 @@ function sanitizeStringList(value: unknown, limit = 4): string[] {
     .filter(Boolean)
     .slice(0, limit);
 }
-
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Summary generation timeout')), timeoutMs);
+        const timer = setTimeout(() => reject(new Error('Summary generation timeout')), timeoutMs);
     promise
       .then((value) => {
         clearTimeout(timer);
@@ -120,14 +123,23 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
+/**
+ * WorkflowSummaryService class.
+ *
+ * Encapsulates workflow summary service behavior for application service orchestration.
+ *
+ * @remarks
+ * This service is part of the backend composition pipeline and is used by
+ * higher-level route/service flows to keep responsibilities separated.
+ */
 export class WorkflowSummaryService {
-  static async summarizeCallback(input: CallbackSummaryInput): Promise<WorkflowNotificationSummary> {
-    const rawPreview = stringifySafe(input.raw ?? input.result ?? input.error ?? null);
-    const fallback = makeFallback(input, rawPreview);
+    static async summarizeCallback(input: CallbackSummaryInput): Promise<WorkflowNotificationSummary> {
+        const rawPreview = stringifySafe(input.raw ?? input.result ?? input.error ?? null);
+        const fallback = makeFallback(input, rawPreview);
 
     try {
-      const provider = await LLMFactory.getDefaultProvider();
-      const prompt = [
+            const provider = await LLMFactory.getDefaultProvider();
+            const prompt = [
         'You summarize autonomous workflow callback payloads for an operations dashboard.',
         'Return VALID JSON only with this exact shape:',
         '{"summary":"...","bullets":["..."],"suggestedQuestions":["..."]}',
@@ -153,13 +165,13 @@ export class WorkflowSummaryService {
         stringifySafe(input.error ?? null, MAX_JSON_PREVIEW),
       ].join('\n');
 
-      const aiResponse = await withTimeout(provider.generateReply(prompt), AI_TIMEOUT_MS);
-      const parsed = extractJsonObject(aiResponse);
+            const aiResponse = await withTimeout(provider.generateReply(prompt), AI_TIMEOUT_MS);
+            const parsed = extractJsonObject(aiResponse);
       if (!parsed) return fallback;
 
-      const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
-      const bullets = sanitizeStringList(parsed.bullets, 4);
-      const suggestedQuestions = sanitizeStringList(parsed.suggestedQuestions, 3);
+            const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
+            const bullets = sanitizeStringList(parsed.bullets, 4);
+            const suggestedQuestions = sanitizeStringList(parsed.suggestedQuestions, 3);
 
       if (!summary || bullets.length === 0) return fallback;
 
@@ -167,7 +179,7 @@ export class WorkflowSummaryService {
         ...fallback,
         summary: summary.slice(0, 280),
         bullets,
-        suggestedQuestions: suggestedQuestions.length === 3 ? suggestedQuestions : fallback.suggestedQuestions,
+                suggestedQuestions: suggestedQuestions.length === 3 ? suggestedQuestions : fallback.suggestedQuestions,
         generatedBy: 'ai',
       };
     } catch (err) {

@@ -9,10 +9,16 @@ import {
 } from "solid-js";
 import { notificationsApi } from "../lib/api";
 
+/** Notification categories used by inbox/toast rendering. */
 export type AppNotificationType = "workflow_event" | "approval_request" | "system";
+/** Connection state for notifications SSE stream. */
 export type NotificationConnectionState = "connecting" | "live" | "offline";
+/** Browser push permission state exposed to UI. */
 export type PushPermissionState = "unsupported" | "default" | "granted" | "denied";
 
+/**
+ * Interface describing inbox notification shape.
+ */
 export interface InboxNotification {
   id: string;
   type: AppNotificationType;
@@ -24,6 +30,9 @@ export interface InboxNotification {
   data?: unknown;
 }
 
+/**
+ * Interface describing toast notification shape.
+ */
 export interface ToastNotification {
   id: string;
   type: AppNotificationType;
@@ -33,6 +42,7 @@ export interface ToastNotification {
   runId?: string;
 }
 
+/** Context contract exposed by notifications provider. */
 type NotificationsContextValue = {
   notifications: () => InboxNotification[];
   toasts: () => ToastNotification[];
@@ -51,7 +61,6 @@ type NotificationsContextValue = {
   testPush: () => Promise<void>;
   unmutePushTopics: () => void;
 };
-
 const notificationsContextDefaults: NotificationsContextValue = {
   notifications: () => [],
   toasts: () => [],
@@ -70,9 +79,14 @@ const notificationsContextDefaults: NotificationsContextValue = {
   testPush: async () => {},
   unmutePushTopics: () => {},
 };
-
 const NotificationsContext = createContext<NotificationsContextValue>(notificationsContextDefaults);
 
+/**
+ * Converts a URL-safe base64 VAPID key into `Uint8Array` for Push API calls.
+ *
+ * @param base64 - URL-safe base64 encoded VAPID key.
+ * @returns Byte array representation of the key.
+ */
 function toUint8Array(base64: string): Uint8Array {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
   const base64Safe = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -82,6 +96,12 @@ function toUint8Array(base64: string): Uint8Array {
   return output;
 }
 
+/**
+ * Normalizes backend notification payloads into UI-safe shape.
+ *
+ * @param input - Raw notification payload.
+ * @returns Normalized inbox notification.
+ */
 function normalizeNotification(input: any): InboxNotification {
   return {
     id: String(input.id),
@@ -94,7 +114,6 @@ function normalizeNotification(input: any): InboxNotification {
     data: input.data,
   };
 }
-
 export const NotificationsProvider: ParentComponent = (props) => {
   const [notifications, setNotifications] = createSignal<InboxNotification[]>([]);
   const [toasts, setToasts] = createSignal<ToastNotification[]>([]);
@@ -109,9 +128,9 @@ export const NotificationsProvider: ParentComponent = (props) => {
   );
   let sse: EventSource | undefined;
   const toastTimers = new Map<string, number>();
-
   const unreadCount = createMemo(() => notifications().filter((item) => !item.read).length);
 
+  /** Fetches latest inbox notifications from backend. */
   async function refresh() {
     setLoading(true);
     try {
@@ -122,6 +141,11 @@ export const NotificationsProvider: ParentComponent = (props) => {
     }
   }
 
+  /**
+   * Marks a single notification as read with optimistic UI update.
+   *
+   * @param id - Notification id.
+   */
   async function markRead(id: string) {
     const current = notifications().find((item) => item.id === id);
     if (!current || current.read) return;
@@ -140,6 +164,11 @@ export const NotificationsProvider: ParentComponent = (props) => {
     }
   }
 
+  /**
+   * Marks multiple notifications as read in sequence.
+   *
+   * @param ids - Notification ids.
+   */
   async function markManyRead(ids: string[]) {
     const uniqueIds = Array.from(new Set(ids)).filter(Boolean);
     for (const id of uniqueIds) {
@@ -147,6 +176,11 @@ export const NotificationsProvider: ParentComponent = (props) => {
     }
   }
 
+  /**
+   * Dismisses one toast notification and clears its auto-close timer.
+   *
+   * @param id - Toast id.
+   */
   function dismissToast(id: string) {
     const timer = toastTimers.get(id);
     if (timer !== undefined) {
@@ -156,6 +190,11 @@ export const NotificationsProvider: ParentComponent = (props) => {
     setToasts((items) => items.filter((item) => item.id !== id));
   }
 
+  /**
+   * Adds a toast notification with capped queue length and expiry timer.
+   *
+   * @param notification - Notification to surface as toast.
+   */
   function enqueueToast(notification: InboxNotification) {
     dismissToast(notification.id);
 
@@ -170,7 +209,6 @@ export const NotificationsProvider: ParentComponent = (props) => {
       },
       ...items,
     ].slice(0, 4));
-
     const timer = window.setTimeout(() => {
       dismissToast(notification.id);
     }, 5000);
@@ -178,6 +216,7 @@ export const NotificationsProvider: ParentComponent = (props) => {
     toastTimers.set(notification.id, timer);
   }
 
+  /** Clears all queued toast notifications and active timers. */
   function clearAllToasts() {
     for (const timer of toastTimers.values()) {
       window.clearTimeout(timer);
@@ -186,6 +225,7 @@ export const NotificationsProvider: ParentComponent = (props) => {
     setToasts([]);
   }
 
+  /** Clears inbox notifications with optimistic rollback on failure. */
   async function clearAll() {
     const snapshot = notifications();
     setNotifications([]);
@@ -199,6 +239,11 @@ export const NotificationsProvider: ParentComponent = (props) => {
     }
   }
 
+  /**
+   * Enables browser push notifications and registers subscription on backend.
+   *
+   * @returns `true` when push subscription is active.
+   */
   async function enablePush(): Promise<boolean> {
     if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("Notification" in window)) {
       setPushPermission("unsupported");
@@ -210,14 +255,12 @@ export const NotificationsProvider: ParentComponent = (props) => {
       const permission = await Notification.requestPermission();
       setPushPermission(permission as PushPermissionState);
       if (permission !== "granted") return false;
-
       const registration = await navigator.serviceWorker.ready;
       const existing = await registration.pushManager.getSubscription();
       if (existing) {
         await notificationsApi.subscribePush(existing.toJSON());
         return true;
       }
-
       const keyData = await notificationsApi.getPushPublicKey();
       const applicationServerKey = toUint8Array(keyData.publicKey) as unknown as BufferSource;
       const created = await registration.pushManager.subscribe({
@@ -234,15 +277,22 @@ export const NotificationsProvider: ParentComponent = (props) => {
     }
   }
 
+  /** Sends a push test event through backend notification API. */
   async function testPush() {
     await notificationsApi.sendPushTest();
   }
 
+  /** Requests service worker to clear muted push topics. */
   function unmutePushTopics() {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
     navigator.serviceWorker.controller?.postMessage({ type: "PUSH_UNMUTE_ALL" });
   }
 
+  /**
+   * Inserts or updates an incoming notification from SSE payloads.
+   *
+   * @param input - Raw notification payload.
+   */
   function upsertNotification(input: any) {
     const incoming = normalizeNotification(input);
     setLastEventId(incoming.id);
@@ -314,6 +364,7 @@ export const NotificationsProvider: ParentComponent = (props) => {
   );
 };
 
+/** Returns notifications context value for consumer components. */
 export function useNotifications() {
   return useContext(NotificationsContext) || notificationsContextDefaults;
 }

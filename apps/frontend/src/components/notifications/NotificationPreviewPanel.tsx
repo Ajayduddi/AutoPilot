@@ -5,13 +5,15 @@ import { usePanel } from "../../context/panel.context";
 import type { InboxNotification } from "../../context/notifications.context";
 import { getNotificationDisplayTitle, getWorkflowInsight } from "../../lib/notification-insights";
 
+/**
+ * Interface describing notification preview panel props shape.
+ */
 interface NotificationPreviewPanelProps {
   notification: InboxNotification;
   onOpenWorkflow?: (workflowId: string) => void;
   onOpenApprovals?: () => void;
   onFollowUp?: (question?: string) => void;
 }
-
 const runStatusConfig: Record<string, { label: string; pill: string; dot: string }> = {
   running: {
     label: "Running",
@@ -40,11 +42,41 @@ const runStatusConfig: Record<string, { label: string; pill: string; dot: string
   },
 };
 
+/**
+ * Utility function to format date time.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param value - Input value for formatDateTime.
+ * @returns Return value from formatDateTime.
+ *
+ * @example
+ * ```typescript
+ * const output = formatDateTime(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function formatDateTime(value?: string | null) {
   if (!value) return "Not available";
   return new Date(value).toLocaleString();
 }
 
+/**
+ * Utility function to format duration.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param value - Input value for formatDuration.
+ * @returns Return value from formatDuration.
+ *
+ * @example
+ * ```typescript
+ * const output = formatDuration(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 function formatDuration(value?: number | null) {
   if (value === null || value === undefined) return "Not available";
   if (value < 1000) return `${value}ms`;
@@ -52,6 +84,21 @@ function formatDuration(value?: number | null) {
   return `${(value / 60_000).toFixed(1)}m`;
 }
 
+/**
+ * Utility function to notification preview panel.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param props - Input value for NotificationPreviewPanel.
+ * @returns Return value from NotificationPreviewPanel.
+ *
+ * @example
+ * ```typescript
+ * const output = NotificationPreviewPanel(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function NotificationPreviewPanel(props: NotificationPreviewPanelProps) {
   const { closePanel } = usePanel();
   const [showRaw, setShowRaw] = createSignal(false);
@@ -61,24 +108,20 @@ export function NotificationPreviewPanel(props: NotificationPreviewPanelProps) {
     (runId) => workflowsApi.getRunById(runId, true),
   );
   const insight = () => getWorkflowInsight(props.notification);
-
   const runStatus = () => {
     const status = runDetail()?.status || "queued";
     return runStatusConfig[status] || runStatusConfig.queued;
   };
-
   const openWorkflowRoute = () => {
     const workflowId = runDetail()?.workflowId;
     if (!workflowId) return;
     closePanel();
     props.onOpenWorkflow?.(workflowId);
   };
-
   const openApprovals = () => {
     closePanel();
     props.onOpenApprovals?.();
   };
-
   const submitFollowUp = () => {
     const question = followUpQuestion().trim();
     if (!question) return;

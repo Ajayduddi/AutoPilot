@@ -9,7 +9,6 @@ const providerStyles: Record<string, { bg: string; text: string; label: string }
   sim: { bg: "bg-cyan-500/12 border-cyan-400/25", text: "text-cyan-200", label: "Sim" },
   custom: { bg: "bg-slate-500/12 border-slate-400/25", text: "text-slate-200", label: "Custom" },
 };
-
 const statusStyles: Record<string, { dot: string; label: string }> = {
   completed: { dot: "bg-emerald-500", label: "Completed" },
   running: { dot: "bg-blue-500 animate-pulse", label: "Running" },
@@ -18,6 +17,9 @@ const statusStyles: Record<string, { dot: string; label: string }> = {
   waiting_approval: { dot: "bg-amber-500 animate-pulse", label: "Awaiting" },
 };
 
+/**
+ * Interface describing workflow list card props shape.
+ */
 interface WorkflowListCardProps {
   id: string;
   name: string;
@@ -37,10 +39,24 @@ interface WorkflowListCardProps {
   layout?: "grid" | "list";
 }
 
+/**
+ * Utility function to workflow list card.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param props - Input value for WorkflowListCard.
+ * @returns Return value from WorkflowListCard.
+ *
+ * @example
+ * ```typescript
+ * const output = WorkflowListCard(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function WorkflowListCard(props: WorkflowListCardProps) {
   const prov = () => providerStyles[props.provider] || providerStyles.custom;
   const lastStatus = () => (props.lastRunStatus ? statusStyles[props.lastRunStatus] || null : null);
-
   const timeAgo = () => {
     if (!props.lastRunAt) return null;
     const diff = Date.now() - new Date(props.lastRunAt).getTime();
@@ -49,16 +65,13 @@ export function WorkflowListCard(props: WorkflowListCardProps) {
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
     return `${Math.floor(diff / 86400000)}d ago`;
   };
-
   const stateOpacity = () =>
     props.archived ? "opacity-65" : !props.enabled ? "opacity-80" : "";
-
   const baseCls =
     "bg-gradient-to-br from-neutral-800/55 to-neutral-900/82 border border-neutral-700/40 transition-all duration-300 cursor-pointer";
-
   const hoverCls = () =>
     props.enabled && !props.archived
-      ? "hover:border-neutral-500/50 hover:shadow-[0_16px_36px_rgba(0,0,0,0.42)]"
+      ? "hover:border-indigo-500/25 hover:shadow-[0_16px_40px_rgba(0,0,0,0.42),0_0_0_1px_rgba(99,102,241,0.08)]"
       : "";
 
   // ── shared trigger button content ─────────────────────────────────────────
@@ -93,10 +106,10 @@ export function WorkflowListCard(props: WorkflowListCardProps) {
       fallback={
         // ── GRID CARD ────────────────────────────────────────────────────────
         <div
-          class={`group h-full flex flex-col rounded-2xl shadow-[0_8px_22px_rgba(0,0,0,0.3)] ${baseCls} ${hoverCls()} ${stateOpacity()} hover:-translate-y-[2px]`}
+          class={`group h-full flex flex-col rounded-2xl shadow-[0_8px_22px_rgba(0,0,0,0.3)] workflow-card-glow ${baseCls} ${hoverCls()} ${stateOpacity()} hover:-translate-y-[2px]`}
           onClick={() => props.onViewDetails(props.id)}
         >
-          <div class="p-4.5 md:p-5 flex flex-col gap-3.5 flex-1">
+          <div class="p-4 md:p-5 flex flex-col gap-3.5 flex-1">
             {/* Header row */}
             <div class="flex items-start justify-between gap-3">
               <div class="flex-1 min-w-0">
@@ -170,7 +183,7 @@ export function WorkflowListCard(props: WorkflowListCardProps) {
     >
       {/* ── LIST ROW ──────────────────────────────────────────────────────── */}
       <div
-        class={`group flex items-center gap-4 rounded-xl px-4 py-3 shadow-[0_2px_10px_rgba(0,0,0,0.22)] ${baseCls} ${hoverCls()} ${stateOpacity()}`}
+        class={`group flex items-center gap-2 sm:gap-4 rounded-xl px-3 sm:px-4 py-3 shadow-[0_2px_10px_rgba(0,0,0,0.22)] ${baseCls} ${hoverCls()} ${stateOpacity()}`}
         onClick={() => props.onViewDetails(props.id)}
       >
         {/* Status dot */}
@@ -181,7 +194,7 @@ export function WorkflowListCard(props: WorkflowListCardProps) {
         </div>
 
         {/* Name + key */}
-        <div class="min-w-0 w-[210px] shrink-0">
+        <div class="min-w-0 flex-1 sm:flex-none sm:w-[210px]">
           <div class="flex items-center gap-1.5">
             <span class="text-[13.5px] font-semibold text-slate-100 truncate tracking-tight">{props.name}</span>
             <Show when={!props.enabled && !props.archived}>
@@ -195,12 +208,12 @@ export function WorkflowListCard(props: WorkflowListCardProps) {
         </div>
 
         {/* Description */}
-        <p class="flex-1 min-w-0 text-[12.5px] text-slate-300/85 truncate">
+        <p class="hidden md:block flex-1 min-w-0 text-[12.5px] text-slate-300/85 truncate">
           {props.description ?? <span class="text-slate-600 italic">No description</span>}
         </p>
 
         {/* Provider + tags */}
-        <div class="hidden sm:flex items-center gap-1.5 shrink-0">
+        <div class="hidden sm:flex items-center gap-1.5 shrink-0 ml-auto justify-end min-w-[150px]">
           <span class={`shrink-0 text-[10px] font-semibold px-2.5 py-[3px] rounded-full border ${prov().bg} ${prov().text}`}>
             {prov().label}
           </span>
@@ -219,14 +232,18 @@ export function WorkflowListCard(props: WorkflowListCardProps) {
         </div>
 
         {/* Private icon */}
-        <Show when={props.visibility === "private"}>
-          <svg class="shrink-0 text-slate-500" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-          </svg>
-        </Show>
+        <div class="w-4 shrink-0 flex items-center justify-center">
+          <Show when={props.visibility === "private"}>
+            <svg class="text-slate-500" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+          </Show>
+        </div>
 
-        <TriggerBtn />
+        <div class="shrink-0 w-auto sm:w-[84px] ml-auto flex justify-end">
+          <TriggerBtn />
+        </div>
       </div>
     </Show>
   );

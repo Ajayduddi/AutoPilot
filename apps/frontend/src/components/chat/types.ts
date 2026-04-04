@@ -33,6 +33,8 @@ export interface ActionItem {
   loading?: boolean;
   /** Related entity id this action targets */
   entityId?: string;
+  /** Optional structured payload for local action handlers */
+  data?: Record<string, unknown>;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -110,6 +112,13 @@ export interface ThinkingBlock extends BlockBase {
   label?: string;
 }
 
+/** Email composition block rendered with subject/body sections. */
+export interface EmailDraftBlock extends BlockBase {
+  type: "email_draft";
+  subject: string;
+  body: string;
+}
+
 /** Full-width error block shown inline inside a message */
 export interface ErrorBlock extends BlockBase {
   type: "error";
@@ -145,6 +154,30 @@ export interface ApprovalCardBlock extends BlockBase {
   rejectActionId?: string;
 }
 
+export interface QuestionMcqOption {
+  id: string;
+  label: string;
+  valueToSend: string;
+  description?: string;
+  recommended?: boolean;
+}
+
+export interface QuestionMcqBlock extends BlockBase {
+  type: "question_mcq";
+  questionId: string;
+  prompt: string;
+  options: QuestionMcqOption[];
+  allowFreeText?: boolean;
+  expiresAt?: string;
+  stale?: boolean;
+  state?: "pending" | "submitting" | "answered" | "expired";
+  selectedOptionId?: string | null;
+  selectedValue?: string | null;
+  answeredAt?: string;
+  collapsed?: boolean;
+  continuation?: AssistantBlock[];
+}
+
 // ─────────────────────────────────────────────────────────────
 //  Union type
 // ─────────────────────────────────────────────────────────────
@@ -159,10 +192,12 @@ export type AssistantBlock =
   | TaskCardBlock
   | WorkflowStatusBlock
   | ThinkingBlock
+  | EmailDraftBlock
   | ErrorBlock
   | DetailToggleBlock
   | TimelineBlock
-  | ApprovalCardBlock;
+  | ApprovalCardBlock
+  | QuestionMcqBlock;
 
 // ─────────────────────────────────────────────────────────────
 //  Message models

@@ -2,6 +2,13 @@ import { defineConfig } from "@solidjs/start/config";
 
 export default defineConfig({
   ssr: false,
+  server: {
+    // Pin Nitro behavior across deploys to avoid compatibility-date drift.
+    compatibilityDate: process.env.NITRO_COMPATIBILITY_DATE || "2026-04-04",
+    nitro: {
+      compatibilityDate: process.env.NITRO_COMPATIBILITY_DATE || "2026-04-04",
+    }
+  },
   vite: {
     resolve: {
       alias: {

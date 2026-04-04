@@ -1,11 +1,16 @@
+/**
+ * @fileoverview providers/workflow/custom.adapter.
+ *
+ * External provider adapters and interfaces for LLMs and workflow engines.
+ */
 import type {
   Workflow,
   WorkflowExecutionRequest,
   WorkflowExecutionResult,
   ProviderCapabilities,
   WorkflowProvider,
-} from '@chat-automation/shared';
-import { PROVIDER_CAPABILITIES } from '@chat-automation/shared';
+} from '@autopilot/shared';
+import { PROVIDER_CAPABILITIES } from '@autopilot/shared';
 import { BaseWebhookAdapter } from './base.adapter';
 import type { WorkflowProviderAdapter } from './provider.interface';
 
@@ -21,18 +26,31 @@ import type { WorkflowProviderAdapter } from './provider.interface';
 //  dedicated adapter can use this.
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * Generic webhook workflow adapter used as the provider fallback.
+ *
+ * @remarks
+ * This adapter supports all configured HTTP methods and normalizes responses
+ * into the shared workflow execution result contract.
+ *
+ * @example
+ * ```typescript
+ * const adapter = new CustomAdapter();
+ * const result = await adapter.triggerWorkflow(workflow, request);
+ * ```
+ */
 export class CustomAdapter extends BaseWebhookAdapter implements WorkflowProviderAdapter {
-  readonly name: WorkflowProvider = 'custom';
-  readonly capabilities: ProviderCapabilities = PROVIDER_CAPABILITIES.custom;
+    readonly name: WorkflowProvider = 'custom';
+    readonly capabilities: ProviderCapabilities = PROVIDER_CAPABILITIES.custom;
 
   async triggerWorkflow(
     workflow: Workflow,
     request: WorkflowExecutionRequest,
   ): Promise<WorkflowExecutionResult> {
-    const endpoint = workflow.executionEndpoint!;
-    const startedAt = new Date().toISOString();
+        const endpoint = workflow.executionEndpoint!;
+        const startedAt = new Date().toISOString();
 
-    const payload = {
+        const payload = {
       ...request.input,
       _meta: {
         traceId: request.traceId,
@@ -43,15 +61,15 @@ export class CustomAdapter extends BaseWebhookAdapter implements WorkflowProvide
       },
     };
 
-    const authHeaders = this.buildAuthHeaders(workflow);
+        const authHeaders = this.buildAuthHeaders(workflow);
 
     try {
-      let data: unknown;
-      const headers = { ...authHeaders, 'x-trace-id': request.traceId };
+            let data: unknown;
+            const headers = { ...authHeaders, 'x-trace-id': request.traceId };
 
       switch (workflow.httpMethod) {
         case 'GET': {
-          const queryParams = {
+                    const queryParams = {
             ...request.input,
             _traceId: request.traceId,
             _workflowKey: request.workflowKey,
@@ -77,7 +95,7 @@ export class CustomAdapter extends BaseWebhookAdapter implements WorkflowProvide
           break;
       }
 
-      const normalized = this.normalizeResponse(data, workflow);
+            const normalized = this.normalizeResponse(data, workflow);
 
       return {
         runId: request.traceId,
@@ -89,13 +107,13 @@ export class CustomAdapter extends BaseWebhookAdapter implements WorkflowProvide
         error: null,
         meta: {
           startedAt,
-          finishedAt: normalized.status === 'completed' ? new Date().toISOString() : null,
+                    finishedAt: normalized.status === 'completed' ? new Date().toISOString() : null,
           triggerSource: request.source,
           providerRunId: normalized.providerRunId,
         },
       };
     } catch (err) {
-      const normalized = this.normalizeError(err, workflow);
+            const normalized = this.normalizeError(err, workflow);
       return {
         runId: request.traceId,
         workflowKey: request.workflowKey,

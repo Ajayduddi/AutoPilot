@@ -1,6 +1,7 @@
 {
   "name": "frontend",
-  "version": "1.0.0",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,14 +12,12 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@chat-automation/shared": "workspace:*",
+    "@autopilot/shared": "workspace:*",
     "@solidjs/meta": "^0.29.4",
     "@solidjs/router": "^0.14.1",
     "@solidjs/start": "^1.0.1",
-    "dompurify": "^3.3.3",
     "github-markdown-css": "^5.9.0",
     "highlight.js": "^11.11.1",
-    "marked": "^17.0.5",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
     "solid-js": "^1.8.18",

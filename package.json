@@ -1,6 +1,7 @@
 {
-  "name": "chat-automation-platform",
-  "version": "1.0.0",
+  "name": "autopilot",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -10,6 +11,7 @@
     "dev": "bun --filter='*' run dev",
     "build": "bun --filter='*' run build",
     "typecheck": "bun --filter='*' run typecheck",
-    "test": "bun --filter='*' run test"
+    "test": "bun --filter='*' run test",
+    "ci:check-pr-size": "bun scripts/ci/check-pr-size.ts"
   }
 }

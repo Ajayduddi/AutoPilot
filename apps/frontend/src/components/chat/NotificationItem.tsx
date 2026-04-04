@@ -1,5 +1,8 @@
 import { For, Show, createSignal } from "solid-js";
 
+/**
+ * Interface describing notification item props shape.
+ */
 interface NotificationItemProps {
   title: string;
   message?: string;
@@ -20,7 +23,6 @@ interface NotificationItemProps {
   onFollowUp?: () => void;
   onMarkRead?: () => void;
 }
-
 const typeConfig = {
   workflow_event: {
     label: "Workflow",
@@ -58,6 +60,21 @@ const typeConfig = {
   },
 };
 
+/**
+ * Utility function to notification item.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @param props - Input value for NotificationItem.
+ * @returns Return value from NotificationItem.
+ *
+ * @example
+ * ```typescript
+ * const output = NotificationItem(value);
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function NotificationItem(props: NotificationItemProps) {
   const [showRaw, setShowRaw] = createSignal(false);
   const cfg = () => typeConfig[props.type];

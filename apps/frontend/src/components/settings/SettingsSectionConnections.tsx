@@ -2,6 +2,9 @@ import { For, Show, type Accessor } from "solid-js";
 import { CustomSelect } from "../ui/CustomSelect";
 import { providerLabel, providerSelectOptions, settingsCls } from "./types";
 
+/**
+  * provider config type alias.
+  */
 type ProviderConfig = {
   id: string;
   provider: string;
@@ -9,6 +12,20 @@ type ProviderConfig = {
   isDefault?: boolean;
 };
 
+/**
+ * Utility function to settings section connections.
+ *
+ * @remarks
+ * Frontend utility used by the web app UI.
+ * @returns Return value from SettingsSectionConnections.
+ *
+ * @example
+ * ```typescript
+ * const output = SettingsSectionConnections();
+ * console.log(output);
+ * ```
+ * @throws {Error} Propagates runtime failures from dependent operations.
+ */
 export function SettingsSectionConnections(props: {
   providers: Accessor<ProviderConfig[]>;
   isAdding: Accessor<boolean>;
@@ -25,6 +42,7 @@ export function SettingsSectionConnections(props: {
   setDefaultModel: (value: string) => void;
   savingDefaultModel: Accessor<boolean>;
   defaultModelError: Accessor<string>;
+  defaultModelDisplayLabel: Accessor<string>;
   activeProviderConfig: Accessor<ProviderConfig | undefined>;
   activeProviderName: Accessor<string>;
   activeProviderModelsLoading: Accessor<boolean>;
@@ -36,137 +54,165 @@ export function SettingsSectionConnections(props: {
   requestDeleteProvider: (id: string) => void;
 }) {
   return (
-    <section class="space-y-4">
+    <section class={`${settingsCls.sectionCard} p-5 md:p-8 space-y-5 md:space-y-7`}>
+      <div class="border-b border-neutral-800/40 pb-4">
+        <h2 class="text-lg md:text-xl font-semibold text-neutral-100 tracking-tight">Connections</h2>
+        <p class="text-[13px] md:text-[14px] text-neutral-500 mt-1">Manage external AI providers and configure your default system model.</p>
+      </div>
+
       <div
-        class={`grid gap-4 items-start ${
-          props.isAdding() ? "grid-cols-1 xl:grid-cols-[1.3fr_minmax(320px,1fr)]" : "grid-cols-1"
+        class={`grid gap-6 items-start ${
+          props.isAdding() ? "grid-cols-1 xl:grid-cols-[1.3fr_minmax(340px,1fr)]" : "grid-cols-1"
         }`}
       >
-        <div class={`${settingsCls.sectionCard} p-5 space-y-3`}>
-          <div class={`${settingsCls.subCard} p-4`}>
-            <div class="flex items-start justify-between gap-3">
-              <div>
+        <div class="space-y-6">
+          <div class={`${settingsCls.subCard} p-4 sm:p-5`}>
+            <div class="mb-4">
+              <div class="flex items-center justify-between gap-3">
                 <div class="flex items-center gap-2">
-                  <p class="text-sm font-semibold text-neutral-100">Default LLM Model</p>
+                  <p class="text-[14px] sm:text-[15px] font-medium text-neutral-200 tracking-tight">Default LLM Model</p>
                   <Show when={props.activeProviderConfig()}>
-                    <span class="px-2 py-0.5 rounded-full text-[10px] font-medium border border-neutral-700/80 bg-neutral-900/80 text-neutral-300">
+                    <span class="px-2 py-[2px] rounded-md text-[9px] uppercase tracking-wider font-semibold border border-neutral-700/60 bg-neutral-800/40 text-neutral-300">
                       {props.activeProviderName()}
                     </span>
                   </Show>
                 </div>
-                <p class="text-xs text-neutral-500 mt-1">Used automatically when starting a new chat response.</p>
               </div>
+              <p class="text-[12px] sm:text-[13px] text-neutral-500 mt-1">Used automatically when starting a new chat.</p>
             </div>
 
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <Show
+                when={props.activeProviderConfig() && !props.activeProviderModelsLoading()}
+                fallback={
+                  <div class="flex-1 flex items-center text-[12px] text-neutral-500 h-10 rounded-xl border border-neutral-700/40 bg-[#121212] px-4">
+                    {props.activeProviderModelsLoading() ? (
+                      <span class="flex items-center gap-2">
+                        <span class="w-3 h-3 border-2 border-neutral-600 border-t-neutral-400 rounded-full animate-spin" />
+                        Loading...
+                      </span>
+                    ) : "Select an active connection first"}
+                  </div>
+                }
+              >
+                <CustomSelect
+                  options={props.defaultModelOptions()}
+                  value={props.defaultModel()}
+                  onChange={props.setDefaultModel}
+                  placeholder="Select model"
+                  class="flex-1 min-w-[200px]"
+                  triggerClass="h-10 px-4 rounded-xl border-neutral-700/60 bg-[#121212] text-[13px] hover:border-neutral-600"
+                  menuClass="rounded-xl border-neutral-700/80 bg-neutral-900/98 max-h-72 overflow-y-auto"
+                />
+              </Show>
+              
+              <button
+                onClick={props.handleSaveDefaultModel}
+                disabled={!props.defaultModel() || props.savingDefaultModel() || !props.activeProviderConfig()}
+                class={`flex items-center justify-center gap-2 h-10 px-5 rounded-xl text-[13px] font-medium transition-colors shrink-0 ${
+                  !props.defaultModel() || props.activeProviderModelsLoading()
+                    ? "bg-neutral-800/30 text-neutral-500 cursor-not-allowed border border-transparent"
+                    : "bg-white hover:bg-neutral-100 text-black shadow-sm active:scale-[0.98]"
+                }`}
+              >
+                <Show when={props.savingDefaultModel()} fallback={
+                  <><svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg> <span>Save</span></>
+                }>
+                  <div class="w-3.5 h-3.5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                  <span>Saving</span>
+                </Show>
+              </button>
+            </div>
+            
             <Show when={props.defaultModel()}>
-              <div class="mt-3 inline-flex items-center gap-2 rounded-lg border border-neutral-800/80 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-400">
-                <span>Current default</span>
-                <span class="text-neutral-200 font-medium">
-                  {props.activeProviderName()}: {props.defaultModel()}
-                </span>
+              <div class="mt-2.5 flex items-center gap-1.5 text-[11px] text-neutral-500 pl-1">
+                <svg class="w-3 h-3 text-emerald-500/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Current: <span class="text-neutral-300 ml-0.5 max-w-[220px] truncate">{props.defaultModelDisplayLabel()}</span>
               </div>
             </Show>
-
-            <div class="mt-3 rounded-xl border border-neutral-800/80 bg-neutral-950/55 p-2">
-              <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <Show
-                  when={props.activeProviderConfig() && !props.activeProviderModelsLoading()}
-                  fallback={
-                    <div class={`${settingsCls.field} flex-1 flex items-center text-sm text-neutral-500`}>
-                      {props.activeProviderModelsLoading() ? "Loading models..." : "Select an active connection first"}
-                    </div>
-                  }
-                >
-                  <CustomSelect
-                    options={props.defaultModelOptions()}
-                    value={props.defaultModel()}
-                    onChange={props.setDefaultModel}
-                    placeholder="Select model"
-                    class="flex-1"
-                    triggerClass="h-10 rounded-lg border-neutral-700/80 bg-neutral-900/90"
-                    menuClass="rounded-lg border-neutral-700/80 bg-neutral-900/98 max-h-72 overflow-y-auto"
-                  />
-                </Show>
-                <button
-                  onClick={props.handleSaveDefaultModel}
-                  disabled={!props.defaultModel() || props.savingDefaultModel() || !props.activeProviderConfig()}
-                  class={`${settingsCls.primaryBtn} whitespace-nowrap min-w-[126px]`}
-                >
-                  {props.savingDefaultModel() ? "Saving..." : "Save default"}
-                </button>
-              </div>
-            </div>
 
             <Show when={props.defaultModelError()}>
               <p class="text-xs text-red-400 mt-2">{props.defaultModelError()}</p>
             </Show>
           </div>
 
-          <div class="space-y-2.5">
+          <div class={`${settingsCls.subCard} p-5 space-y-4`}>
             <div class="flex items-center justify-between">
               <div>
-                <h2 class="text-sm font-semibold text-neutral-100">Direct Connections</h2>
-                <p class="text-xs text-neutral-500 mt-1">Manage model providers and switch the active integration.</p>
+                <p class="text-[15px] font-medium text-neutral-200 tracking-tight">Direct Connections</p>
+                <p class="text-[13px] text-neutral-500 mt-0.5">Manage model providers and switch the active integration.</p>
               </div>
               <Show when={!props.isAdding()}>
                 <button
                   onClick={() => props.setIsAdding(true)}
-                  class={`${settingsCls.subtleBtn} border-neutral-700/70 text-neutral-300 hover:text-white hover:border-neutral-500 hover:bg-neutral-800/60 inline-flex items-center gap-2`}
+                  class={`${settingsCls.subtleBtn} flex items-center justify-center p-2 sm:px-3 sm:py-2 gap-2`}
+                  title="Add Connection"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                  Add Connection
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  <span class="hidden sm:inline">Add Connection</span>
                 </button>
               </Show>
             </div>
 
             <Show when={props.providers().length === 0}>
-              <div class={`${settingsCls.subCard} px-4 py-7 text-center`}>
+              <div class="rounded-2xl border border-dashed border-neutral-800/80 bg-neutral-900/20 px-4 py-8 text-center">
                 <p class="text-neutral-300 text-sm font-medium">No external connections configured.</p>
-                <p class="text-neutral-500 text-xs mt-1">The app uses local Ollama by default.</p>
+                <p class="text-neutral-500 text-[13px] mt-1">The app uses local Ollama by default.</p>
               </div>
             </Show>
 
-            <For each={props.providers()}>
-              {(conf) => (
-                <div class={`${settingsCls.rowCard} px-4 py-3.5 flex items-start justify-between gap-4 hover:border-neutral-700/80 transition-colors`}>
-                  <div class="min-w-0">
-                    <div class="flex items-center gap-2.5 mb-1">
-                      <span class="font-medium text-neutral-100">{providerLabel(conf.provider || "")}</span>
-                      <Show when={conf.isDefault}>
-                        <span class="px-1.5 py-0.5 rounded-full text-[9px] leading-none uppercase tracking-[0.08em] font-semibold bg-emerald-500/15 border border-emerald-500/25 text-emerald-300">Active</span>
+            <div class="space-y-3">
+              <For each={props.providers()}>
+                {(conf) => (
+                  <div class={`${settingsCls.rowCard} px-3 py-2.5 sm:px-4 sm:py-3 flex flex-row items-center justify-between gap-3 transition-colors`}>
+                    <div class="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                      <div class="flex items-center gap-2">
+                        <span class="text-[14px] font-medium text-neutral-100">{providerLabel(conf.provider || "")}</span>
+                        <Show when={conf.isDefault}>
+                          <span class="px-1.5 py-0.5 rounded-md text-[9px] leading-none uppercase tracking-wider font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">Active</span>
+                        </Show>
+                      </div>
+                      <Show when={conf.baseUrl}>
+                        <span class="hidden sm:block text-neutral-700/50 text-[10px]">•</span>
+                        <p class="text-[11px] text-neutral-500 font-mono break-all line-clamp-1">{conf.baseUrl}</p>
                       </Show>
                     </div>
-                    <Show when={conf.baseUrl}>
-                      <p class="text-xs text-neutral-500 font-mono break-all">{conf.baseUrl}</p>
-                    </Show>
-                  </div>
 
-                  <div class="flex items-center gap-2 shrink-0">
-                    <Show when={!conf.isDefault}>
+                    <div class="flex items-center gap-1 shrink-0">
+                      <Show when={!conf.isDefault}>
+                        <button
+                          onClick={() => props.handleSetActive(conf.id)}
+                          class="p-1.5 sm:p-2 rounded-lg text-indigo-400/70 hover:text-indigo-300 hover:bg-indigo-500/10 transition-colors"
+                          title="Set as active provider"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                          </svg>
+                        </button>
+                      </Show>
                       <button
-                        onClick={() => props.handleSetActive(conf.id)}
-                        class={`${settingsCls.subtleBtn} border-indigo-500/30 text-indigo-300 hover:text-white hover:bg-indigo-500/18 hover:border-indigo-400/45`}
+                        onClick={() => props.requestDeleteProvider(conf.id)}
+                        class="p-1.5 sm:p-2 rounded-lg text-red-500/70 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        title="Delete connection"
                       >
-                        Set Active
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M3 6h18"></path>
+                          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                        </svg>
                       </button>
-                    </Show>
-                    <button
-                      onClick={() => props.requestDeleteProvider(conf.id)}
-                      class={settingsCls.destructiveBtn}
-                    >
-                      Delete
-                    </button>
+                    </div>
                   </div>
-                </div>
-              )}
-            </For>
+                )}
+              </For>
+            </div>
           </div>
         </div>
 
         <Show when={props.isAdding()}>
-          <div class={`${settingsCls.sectionCard} p-5 space-y-4 xl:sticky xl:top-6`}>
-            <div class="flex items-center justify-between">
-              <h3 class="text-sm font-semibold text-neutral-100">Add New Connection</h3>
+          <div class={`${settingsCls.subCard} p-5 space-y-5 xl:sticky xl:top-24`}>
+            <div class="flex items-center justify-between border-b border-neutral-800/50 pb-3">
+              <h3 class="text-[15px] font-medium text-neutral-200 tracking-tight">Add New Connection</h3>
               <button
                 onClick={() => {
                   props.setIsAdding(false);
@@ -184,21 +230,21 @@ export function SettingsSectionConnections(props: {
               </div>
             </Show>
 
-            <div>
-              <label class="block text-xs font-medium text-neutral-400 mb-1.5">Provider ID</label>
+            <div class="space-y-1.5">
+              <label class="text-[12px] font-medium text-neutral-400 pl-1">Provider ID</label>
               <CustomSelect
                 options={providerSelectOptions as unknown as Array<{ value: string; label: string }>}
                 value={props.provider()}
                 onChange={props.setProvider}
                 class="w-full"
-                triggerClass="h-10 rounded-lg border-neutral-700/80 bg-neutral-900/90"
-                menuClass="rounded-lg border-neutral-700/80 bg-neutral-900/98"
+                triggerClass="h-11 rounded-xl border-neutral-800 bg-[#1a1a1a]"
+                menuClass="rounded-xl border-neutral-800 bg-[#1a1a1a]"
               />
             </div>
 
             <Show when={props.provider() === "openai" || props.provider() === "ollama"}>
-              <div>
-                <label class="block text-xs font-medium text-neutral-400 mb-1.5">API Base URL</label>
+              <div class="space-y-1.5">
+                <label class="text-[12px] font-medium text-neutral-400 pl-1">API Base URL</label>
                 <input
                   type="text"
                   placeholder={props.provider() === "ollama" ? "http://localhost:11434" : "https://api.openai.com/v1"}
@@ -206,7 +252,7 @@ export function SettingsSectionConnections(props: {
                   onInput={(e) => props.setBaseUrl(e.currentTarget.value)}
                   class={settingsCls.field}
                 />
-                <div class="text-xs text-neutral-500 mt-2 p-3 bg-neutral-900/75 rounded-lg border border-neutral-800/80">
+                <div class="text-[12px] text-neutral-500 mt-2 p-3 bg-neutral-900/40 rounded-xl border border-neutral-800/60">
                   <p class="font-medium text-neutral-400 mb-1.5">Common compatible base URLs:</p>
                   <ul class="list-disc pl-4 space-y-1">
                     <li>Local Ollama: <code class="text-neutral-300">http://localhost:11434</code></li>
@@ -219,8 +265,8 @@ export function SettingsSectionConnections(props: {
               </div>
             </Show>
 
-            <div>
-              <label class="block text-xs font-medium text-neutral-400 mb-1.5">API Key (Bearer Auth)</label>
+            <div class="space-y-1.5">
+              <label class="text-[12px] font-medium text-neutral-400 pl-1">API Key (Bearer Auth)</label>
               <input
                 type="password"
                 placeholder="sk-..."
@@ -234,16 +280,21 @@ export function SettingsSectionConnections(props: {
               <button
                 onClick={props.handleSave}
                 disabled={props.saving()}
-                class={`${settingsCls.primaryBtn} flex-1`}
+                class={`${settingsCls.primaryBtn} flex items-center justify-center gap-2 flex-1`}
               >
-                {props.saving() ? "Saving..." : "Save Connection"}
+                <Show when={props.saving()} fallback={
+                  <><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg> <span>Save Connection</span></>
+                }>
+                  <div class="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                  <span>Saving...</span>
+                </Show>
               </button>
               <button
                 onClick={() => {
                   props.setIsAdding(false);
                   props.resetForm();
                 }}
-                class={`${settingsCls.subtleBtn} border-neutral-700/80 text-neutral-300 hover:text-white hover:border-neutral-500 hover:bg-neutral-800/60 h-10 px-4`}
+                class={`${settingsCls.subtleBtn} flex items-center justify-center`}
               >
                 Cancel
               </button>
