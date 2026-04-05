@@ -1,6 +1,9 @@
 <div align="center">
 
-# AutoPilot
+<h1 style="display:flex;align-items:center;justify-content:center;gap:0;margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;font-weight:600;letter-spacing:-0.01em;">
+  <img src="apps/frontend/public/icons/icon-192.svg" alt="AutoPilot icon" width="40" height="40" />
+  <span>AutoPilot</span>
+</h1>
 
 **Chat-First Automation Platform**  
 *Conversational control center for workflows, agents, and automations*
@@ -79,7 +82,7 @@ docker run -d \
   --name autopilot \
   -p 3000:3000 \
   --env-file .env \
-  ajayduddi/autopilot:0.1.0
+  ajayduddi/autopilot:latest
 ```
 
 ### Environment Configuration
@@ -88,9 +91,9 @@ Create a `.env` file with the following (copy from `.env.example`):
 
 ```bash
 PORT=3000
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/chat_automation
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/autopilot
 FRONTEND_ORIGIN=https://your-domain.com
-AUTOPILOT_HOME=~/.autopilot
+AUTOPILOT_HOME=/home/<your-username>/.autopilot
 NODE_ENV=production
 
 # ─── Authentication / Sessions ──────────────────────────────
@@ -107,9 +110,6 @@ GOOGLE_REDIRECT_URI=https://your-domain.com/api/auth/google/callback
 # Preferred: generate/revoke keys from Settings > Webhook Callbacks.
 WEBHOOK_CALLBACK_SECRET=change-me
 CALLBACK_BASE_URL=https://your-domain.com
-
-# Optional: only used by db seed to prefill sample n8n workflows.
-N8N_WEBHOOK_URL=http://localhost:5678/webhook
 
 # ─── LLM Provider Defaults ──────────────────────────────────
 PROVIDER_API_KEY_ENCRYPTION_KEY=change-this-32-byte-secret
@@ -297,9 +297,9 @@ Advanced configuration via `~/.autopilot/config.json`:
   "METRICS_JOB_NAME": "autopilot-backend",
   "METRICS_INSTANCE_ID": "",
   "METRICS_PUSH_INTERVAL_MS": 15000,
-  "METRICS_PUSH_TIMEOUT_MS": 5000
+  "METRICS_PUSH_TIMEOUT_MS": 5000,
+  "METRICS_SNAPSHOT_PATH": ""
 }
-
 ```
 
 ## 📖 Usage Guide
@@ -460,7 +460,7 @@ bun run test
 docker logs autopilot
 
 # Verify environment variables
-docker run --rm ajayduddi/autopilot:0.1.0 env | grep -E "(DATABASE_URL|AUTH_COOKIE_SECRET)"
+docker run --rm ajayduddi/autopilot:latest env | grep -E "(DATABASE_URL|AUTH_COOKIE_SECRET)"
 ```
 
 ### Database Connection Issues
