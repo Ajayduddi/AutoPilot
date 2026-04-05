@@ -1,7 +1,7 @@
 <div align="center">
 
 <h1 style="display:flex;align-items:center;justify-content:center;gap:0;margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;font-weight:600;letter-spacing:-0.01em;">
-  <img src="apps/frontend/public/icons/icon-192.svg" alt="AutoPilot icon" width="40" height="40" />
+  <img src="README.svg" alt="AutoPilot icon" width="40" height="40" />
   <span>AutoPilot</span>
 </h1>
 
