@@ -1,8 +1,10 @@
 <div align="center">
 
-<p align="center">
-  <img src="README.svg" alt="AutoPilot" width="260" height="52" />
+<p align="center" style="margin-bottom: 0">
+  <img src="README.svg" alt="AutoPilot" width="240" height="50" />
 </p>
+
+---
 
 **Chat-First Automation Platform**  
 *Conversational control center for workflows, agents, and automations*

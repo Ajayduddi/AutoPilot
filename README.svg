@@ -9,10 +9,10 @@
     </filter>
   </defs>
 
-  <rect x="0" y="6" width="52" height="52" rx="16" fill="url(#violet)" filter="url(#soft-glow)"/>
-  <path d="M31 18L18 34H27L24 44L37 30H28L31 18Z" fill="#FFFFFF"/>
+  <rect x="58" y="6" width="52" height="52" rx="16" fill="url(#violet)" filter="url(#soft-glow)"/>
+  <path d="M89 18L76 34H85L82 44L95 30H86L89 18Z" fill="#FFFFFF"/>
 
-  <text x="68" y="41" fill="#FFFFFF" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="28" font-weight="600" letter-spacing="-0.2">
+  <text x="126" y="41" fill="#FFFFFF" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="28" font-weight="600" letter-spacing="-0.2">
     AutoPilot
   </text>
 </svg>
