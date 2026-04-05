@@ -1,9 +1,8 @@
 <div align="center">
 
-<h1 style="display:flex;align-items:center;justify-content:center;gap:0;margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;font-weight:600;letter-spacing:-0.01em;">
-  <img src="README.svg" alt="AutoPilot icon" width="40" height="40" />
-  <span>AutoPilot</span>
-</h1>
+<p align="center">
+  <img src="README.svg" alt="AutoPilot" width="260" height="52" />
+</p>
 
 **Chat-First Automation Platform**  
 *Conversational control center for workflows, agents, and automations*

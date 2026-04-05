@@ -1,14 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 512 512" role="img" aria-label="AutoPilot icon">
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="64" viewBox="0 0 320 64" role="img" aria-label="AutoPilot">
   <defs>
     <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#6D5CFF"/>
       <stop offset="100%" stop-color="#4F46E5"/>
     </linearGradient>
     <filter id="soft-glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feDropShadow dx="0" dy="0" stdDeviation="18" flood-color="#5A58FF" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#5A58FF" flood-opacity="0.45"/>
     </filter>
   </defs>
 
-  <rect x="64" y="64" width="384" height="384" rx="112" fill="url(#violet)" filter="url(#soft-glow)"/>
-  <path d="M278 142L182 268H245L224 370L329 239H266L278 142Z" fill="#FFFFFF"/>
+  <rect x="0" y="6" width="52" height="52" rx="16" fill="url(#violet)" filter="url(#soft-glow)"/>
+  <path d="M31 18L18 34H27L24 44L37 30H28L31 18Z" fill="#FFFFFF"/>
+
+  <text x="68" y="41" fill="#FFFFFF" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="28" font-weight="600" letter-spacing="-0.2">
+    AutoPilot
+  </text>
 </svg>
