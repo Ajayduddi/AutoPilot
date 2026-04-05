@@ -4,8 +4,6 @@
   <img src="README.svg" alt="AutoPilot" width="240" height="50" />
 </p>
 
----
-
 **Chat-First Automation Platform**  
 *Conversational control center for workflows, agents, and automations*
 
