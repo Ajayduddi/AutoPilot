@@ -7,7 +7,7 @@
     },
     "apps/backend": {
       "name": "backend",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@autopilot/shared": "workspace:*",
         "@mastra/core": "^1.17.0",
@@ -26,13 +26,12 @@
         "@types/node": "^25.5.0",
         "@types/pg": "^8.20.0",
         "drizzle-kit": "^0.31.10",
-        "tsx": "^4.21.0",
         "typescript": "^5.9.3",
       },
     },
     "apps/frontend": {
       "name": "frontend",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@autopilot/shared": "workspace:*",
         "@solidjs/meta": "^0.29.4",
