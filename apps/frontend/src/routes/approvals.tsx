@@ -85,7 +85,7 @@ export default function Approvals() {
         <header class="px-4 md:px-6 py-4 border-b border-neutral-800/20 shrink-0">
           <div class="max-w-5xl mx-auto flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div class="flex items-center gap-3">
-              <button onClick={() => mobileMenu.toggle()} class="md:hidden p-2 -ml-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800/50 block">
+              <button onClick={() => mobileMenu.toggle()} class="md:hidden p-2 text-neutral-300 hover:text-white rounded-xl bg-[#1e1e1e] border border-neutral-700/60 shadow-[0_2px_12px_rgba(0,0,0,0.3)] hover:border-neutral-500/70 hover:bg-[#242424] transition-all duration-200 block">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
               </button>
               <div>

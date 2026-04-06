@@ -18,7 +18,16 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue>();
 export const AuthProvider: ParentComponent = (props) => {
   const [authError, setAuthError] = createSignal("");
-  const [state, { refetch }] = createResource(() => authApi.getState());
+  const [state, { refetch }] = createResource(async () => {
+    try {
+      return await authApi.getState();
+    } catch (err) {
+      // Transient failures (e.g. during OAuth redirect) should not crash the app.
+      // Return login mode so the user sees the login page and can retry.
+      console.warn("[auth] session check failed, falling back to login:", err);
+      return { mode: "login" as const, oauth: { google: true } } as AuthStatePayload;
+    }
+  });
 
   /**
    * Utility function to refresh.

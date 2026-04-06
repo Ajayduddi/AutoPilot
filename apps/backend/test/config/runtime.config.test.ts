@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -8,6 +8,10 @@ const ORIGINAL_ENV = { ...process.env };
 
 afterEach(() => {
   process.env = { ...ORIGINAL_ENV };
+  resetRuntimeConfigCache();
+});
+
+beforeEach(() => {
   resetRuntimeConfigCache();
 });
 
@@ -37,6 +41,8 @@ describe("runtime.config strict validation", () => {
     });
     process.env.AUTOPILOT_HOME = home;
     process.env.CONTEXT_MODE_ENABLED = "true";
+    process.env.FEATURE_TYPED_CONTRACTS = "false";
+    process.env.FEATURE_STRUCTURED_LOGGING = "false";
 
     const cfg = getRuntimeConfig();
     expect(cfg.defaultTimezone).toBe("UTC");

@@ -366,11 +366,9 @@ export default function WorkflowDetail() {
               </div>
             }>
               {(wf) => (
-                <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                <div class={`flex flex-col md:flex-row md:items-start justify-between gap-4 ${showEditForm() ? "hidden md:flex" : ""}`}>
                   <div class="flex items-start gap-3">
-                    <button onClick={() => mobileMenu.toggle()} class="md:hidden p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800/50 flex shrink-0 h-8 w-8 items-center justify-center -ml-2 -mt-1">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-                    </button>
+
                     <div>
                       <div class="flex flex-wrap items-center gap-2.5">
                       <h1 class="page-title">{(wf() as any).name}</h1>
@@ -455,7 +453,7 @@ export default function WorkflowDetail() {
 
             {/* Edit form */}
             <Show when={showEditForm()}>
-              <div class="workflow-surface rounded-xl p-4 block-enter">
+              <div class="md:workflow-surface md:rounded-xl md:p-4 mb-5 block-enter">
                 <div class="flex items-center justify-between mb-3">
                   <h3 class="text-sm font-semibold text-slate-100">Edit Workflow</h3>
                   <div class="flex gap-2">
@@ -686,7 +684,7 @@ export default function WorkflowDetail() {
             {/* Delete confirmation modal */}
             <Show when={showDeleteModal() && workflow()}>
               <div class="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-[2px] px-4">
-                <div class="w-full max-w-md rounded-2xl border border-red-500/25 bg-[#0f131c]/95 shadow-[0_24px_60px_rgba(0,0,0,0.55)] p-5">
+                <div class="workflow-surface w-full max-w-md rounded-2xl shadow-[0_24px_60px_rgba(0,0,0,0.55)] p-5">
                   <div class="flex items-start gap-3">
                     <div class="w-8 h-8 rounded-full bg-red-500/15 border border-red-500/25 flex items-center justify-center text-red-300 shrink-0">
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18" /><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
@@ -748,7 +746,7 @@ export default function WorkflowDetail() {
             {/* Metadata grid */}
             <Show when={workflow()}>
               {(wf) => (
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div class={`grid grid-cols-2 md:grid-cols-4 gap-3 ${showEditForm() ? "hidden md:grid" : ""}`}>
                   {[
                     { label: "Provider", value: providerLabels[(wf() as any).provider] || (wf() as any).provider },
                     { label: "Visibility", value: (wf() as any).visibility },
@@ -790,7 +788,7 @@ export default function WorkflowDetail() {
 
             {/* Tags */}
             <Show when={workflow() && (workflow() as any).tags?.length > 0}>
-              <div class="flex flex-wrap gap-1.5">
+              <div class={`flex flex-wrap gap-1.5 ${showEditForm() ? "hidden md:flex" : ""}`}>
                 {((workflow() as any).tags || []).map((tag: string) => (
                   <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800/70 text-slate-200 border border-slate-600/35">
                     {tag}
@@ -800,7 +798,7 @@ export default function WorkflowDetail() {
             </Show>
 
             {/* Run History */}
-            <div>
+            <div class={showEditForm() ? "hidden md:block" : ""}>
               <div class="flex items-center justify-between mb-3">
                 <h2 class="text-sm font-semibold text-neutral-200">Run History</h2>
                 <button onClick={() => refetchRuns()} class="text-[10px] text-neutral-400 hover:text-neutral-200 transition-colors">
@@ -867,7 +865,7 @@ export default function WorkflowDetail() {
                                   <Show when={runDetail()?.output?.summary}>
                                     <p class="text-xs text-neutral-300 mb-2">{runDetail().output.summary}</p>
                                   </Show>
-                                  <pre class="text-[11px] text-neutral-300 font-mono overflow-x-auto whitespace-pre-wrap">
+                                  <pre class="text-[11px] text-neutral-300 font-mono overflow-x-auto overflow-y-auto max-h-64 whitespace-pre-wrap">
                                     {JSON.stringify(runDetail()?.output?.data || {}, null, 2)}
                                   </pre>
                                 </div>
@@ -904,7 +902,7 @@ export default function WorkflowDetail() {
                               <div>
                                 <p class="text-[10px] uppercase tracking-[0.14em] text-neutral-500 mb-1.5">Input</p>
                                 <div class="rounded-lg bg-neutral-900 border border-neutral-800/60 p-3">
-                                  <pre class="text-[11px] text-neutral-400 font-mono overflow-x-auto whitespace-pre-wrap">
+                                  <pre class="text-[11px] text-neutral-400 font-mono overflow-x-auto overflow-y-auto max-h-64 whitespace-pre-wrap">
                                     {JSON.stringify(runDetail()?.input, null, 2)}
                                   </pre>
                                 </div>

@@ -8,6 +8,7 @@ import { providerLabel, providerSelectOptions, settingsCls } from "./types";
 type ProviderConfig = {
   id: string;
   provider: string;
+  customName?: string | null;
   baseUrl?: string | null;
   isDefault?: boolean;
 };
@@ -32,6 +33,8 @@ export function SettingsSectionConnections(props: {
   setIsAdding: (value: boolean) => void;
   provider: Accessor<string>;
   setProvider: (value: string) => void;
+  customName: Accessor<string>;
+  setCustomName: (value: string) => void;
   apiKey: Accessor<string>;
   setApiKey: (value: string) => void;
   baseUrl: Accessor<string>;
@@ -54,10 +57,10 @@ export function SettingsSectionConnections(props: {
   requestDeleteProvider: (id: string) => void;
 }) {
   return (
-    <section class={`${settingsCls.sectionCard} p-5 md:p-8 space-y-5 md:space-y-7`}>
-      <div class="border-b border-neutral-800/40 pb-4">
-        <h2 class="text-lg md:text-xl font-semibold text-neutral-100 tracking-tight">Connections</h2>
-        <p class="text-[13px] md:text-[14px] text-neutral-500 mt-1">Manage external AI providers and configure your default system model.</p>
+    <section class={`${settingsCls.sectionCard} px-0 md:px-0 space-y-0 md:space-y-7`}>
+      <div class="hidden md:block border-b border-neutral-800/40 pb-4">
+        <h2 class="text-xl font-semibold text-neutral-100 tracking-tight">Connections</h2>
+        <p class="text-[14px] text-neutral-500 mt-1">Manage external AI providers and configure your default system model.</p>
       </div>
 
       <div
@@ -65,8 +68,8 @@ export function SettingsSectionConnections(props: {
           props.isAdding() ? "grid-cols-1 xl:grid-cols-[1.3fr_minmax(340px,1fr)]" : "grid-cols-1"
         }`}
       >
-        <div class="space-y-6">
-          <div class={`${settingsCls.subCard} p-4 sm:p-5`}>
+        <div class="flex flex-col md:space-y-6 divide-y divide-neutral-800/60 md:divide-none">
+          <div class={`${settingsCls.subCard} px-4 py-5 md:p-5`}>
             <div class="mb-4">
               <div class="flex items-center justify-between gap-3">
                 <div class="flex items-center gap-2">
@@ -136,7 +139,7 @@ export function SettingsSectionConnections(props: {
             </Show>
           </div>
 
-          <div class={`${settingsCls.subCard} p-5 space-y-4`}>
+          <div class={`${settingsCls.subCard} px-4 py-5 md:p-5 space-y-4`}>
             <div class="flex items-center justify-between">
               <div>
                 <p class="text-[15px] font-medium text-neutral-200 tracking-tight">Direct Connections</p>
@@ -164,10 +167,17 @@ export function SettingsSectionConnections(props: {
             <div class="space-y-3">
               <For each={props.providers()}>
                 {(conf) => (
-                  <div class={`${settingsCls.rowCard} px-3 py-2.5 sm:px-4 sm:py-3 flex flex-row items-center justify-between gap-3 transition-colors`}>
+                  <div class={`${settingsCls.rowCard} px-4 py-3.5 md:px-4 md:py-3 flex flex-row items-center justify-between gap-3 transition-colors bg-white/[0.03] md:bg-white/[0.02] hover:bg-white/[0.05] !rounded-xl border border-neutral-800/25 md:border-neutral-800/50 mb-3 md:mb-0`}>
                     <div class="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
                       <div class="flex items-center gap-2">
-                        <span class="text-[14px] font-medium text-neutral-100">{providerLabel(conf.provider || "")}</span>
+                        <span class="text-[14px] font-medium text-neutral-100">
+                          {conf.customName?.trim() || providerLabel(conf.provider || "")}
+                        </span>
+                        <Show when={Boolean(conf.customName?.trim())}>
+                          <span class="px-1.5 py-0.5 rounded-md text-[9px] leading-none uppercase tracking-wider font-bold bg-neutral-700/25 border border-neutral-700/60 text-neutral-300">
+                            {providerLabel(conf.provider || "")}
+                          </span>
+                        </Show>
                         <Show when={conf.isDefault}>
                           <span class="px-1.5 py-0.5 rounded-md text-[9px] leading-none uppercase tracking-wider font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">Active</span>
                         </Show>
@@ -210,7 +220,7 @@ export function SettingsSectionConnections(props: {
         </div>
 
         <Show when={props.isAdding()}>
-          <div class={`${settingsCls.subCard} p-5 space-y-5 xl:sticky xl:top-24`}>
+          <div class={`${settingsCls.subCard} px-4 py-5 md:p-5 space-y-5 xl:sticky xl:top-24`}>
             <div class="flex items-center justify-between border-b border-neutral-800/50 pb-3">
               <h3 class="text-[15px] font-medium text-neutral-200 tracking-tight">Add New Connection</h3>
               <button
@@ -241,6 +251,20 @@ export function SettingsSectionConnections(props: {
                 menuClass="rounded-xl border-neutral-800 bg-[#1a1a1a]"
               />
             </div>
+
+            <Show when={props.provider() === "openai"}>
+              <div class="space-y-1.5">
+                <label class="text-[12px] font-medium text-neutral-400 pl-1">Custom Connection Name (Optional)</label>
+                <input
+                  type="text"
+                  maxlength={80}
+                  placeholder="NVIDIA - DeepSeek V3.2"
+                  value={props.customName()}
+                  onInput={(e) => props.setCustomName(e.currentTarget.value)}
+                  class={settingsCls.field}
+                />
+              </div>
+            </Show>
 
             <Show when={props.provider() === "openai" || props.provider() === "ollama"}>
               <div class="space-y-1.5">

@@ -94,6 +94,7 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/autopilot
 FRONTEND_ORIGIN=https://your-domain.com
 AUTOPILOT_HOME=/home/<your-username>/.autopilot
 NODE_ENV=production
+VITE_API_URL=https://your-backend-domain.com
 
 # ─── Authentication / Sessions ──────────────────────────────
 AUTH_COOKIE_SECRET=change-this-secret
@@ -139,14 +140,19 @@ version: '3.8'
 
 services:
   autopilot:
+    container_name: autopilot
     image: ajayduddi/autopilot:latest
-    ports:
-      - "3000:3000"
+    restart: always
     env_file: .env.docker
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-autopilot}
     depends_on:
       - db
+    command: >
+      sh -c "bun /app/apps/backend/dist/db/migrate.js &&
+             bun /app/apps/backend/dist/index.js"
+    ports:
+      - "3000:3000"
     volumes:
       - autopilot_data:/data
 

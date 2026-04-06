@@ -193,12 +193,12 @@ export default function Workflows() {
   return (
     <>
       <Title>Workflows — AutoPilot</Title>
-      <main class="workflow-page flex-1 flex flex-col h-full min-w-0">
+      <main class="workflow-page flex-1 flex flex-col h-full min-w-0 overflow-y-auto">
         {/* Header */}
         <header class="px-4 md:px-6 py-4 border-b border-neutral-800/20 bg-transparent shrink-0">
-          <div class="workflow-shell flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div class="flex items-center gap-3 w-full md:w-auto">
-              <button onClick={() => mobileMenu.toggle()} class="md:hidden p-2 -ml-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800/50 block shrink-0">
+          <div class="workflow-shell flex flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-3 min-w-0">
+              <button onClick={() => mobileMenu.toggle()} class="md:hidden p-2 text-neutral-300 hover:text-white rounded-xl bg-[#1e1e1e] border border-neutral-700/60 shadow-[0_2px_12px_rgba(0,0,0,0.3)] hover:border-neutral-500/70 hover:bg-[#242424] transition-all duration-200 block shrink-0">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
               </button>
               <div class="flex-1 min-w-0">
@@ -206,9 +206,9 @@ export default function Workflows() {
                 <p class="page-subtitle hidden sm:block truncate">Manage, trigger, and monitor your automations across all providers.</p>
               </div>
             </div>
-            <div class="flex items-center justify-end gap-3 w-full md:w-auto shrink-0">
+            <div class="flex items-center justify-end gap-3 shrink-0">
               <Show when={stats().byProvider.length > 0}>
-                <div class="flex gap-1.5">
+                <div class="hidden md:flex gap-1.5">
                   {stats().byProvider.map(p => (
                     <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800/60 text-slate-200 border border-slate-600/30">
                       {p.label}: {p.count}
@@ -221,7 +221,7 @@ export default function Workflows() {
                 size="sm"
                 onClick={() => { setShowCreateForm(!showCreateForm()); setCreateError(null); }}
               >
-                {showCreateForm() ? "✕ Cancel" : "+ Add Workflow"}
+                {showCreateForm() ? "✕ Cancel" : <><span class="hidden sm:inline">+ Add Workflow</span><span class="sm:hidden">+ Add</span></>}
               </Button>
             </div>
           </div>
@@ -229,9 +229,9 @@ export default function Workflows() {
 
         {/* Create Workflow Form */}
         <Show when={showCreateForm()}>
-          <div class="px-6 py-5 border-b border-neutral-800/20 bg-transparent block-enter">
+          <div class="px-4 md:px-6 py-4 md:py-5 mb-5 border-b border-neutral-800/20 bg-transparent block-enter">
             <div class="workflow-shell">
-              <div class="rounded-2xl border border-neutral-800/70 bg-neutral-950/60 shadow-[0_18px_40px_rgba(0,0,0,0.24)] p-5 lg:p-6">
+              <div class="p-0 md:rounded-2xl md:border md:border-neutral-800/70 md:bg-neutral-950/60 md:shadow-[0_18px_40px_rgba(0,0,0,0.24)] md:p-5 lg:p-6">
                 <div class="flex items-center justify-between mb-4">
                   <h3 class="text-sm font-semibold text-slate-100">New Workflow</h3>
                   <span class="text-[10px] uppercase tracking-[0.12em] text-neutral-500">Quick Setup</span>
@@ -243,40 +243,40 @@ export default function Workflows() {
                 </Show>
 
                 {/* Row 1: Key, Name, Provider, Visibility */}
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-                  <div class="flex flex-col gap-1">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 md:gap-3 md:mb-3">
+                  <div class="flex flex-col gap-1.5 md:gap-1">
                     <label class="text-[10px] uppercase tracking-wider workflow-muted">Key *</label>
                     <input placeholder="wf_my_flow" value={form().key} onInput={e => updateField("key", e.currentTarget.value)} class={inputCls} />
                   </div>
-                  <div class="flex flex-col gap-1">
+                  <div class="flex flex-col gap-1.5 md:gap-1">
                     <label class="text-[10px] uppercase tracking-wider workflow-muted">Name *</label>
                     <input placeholder="My Workflow" value={form().name} onInput={e => updateField("name", e.currentTarget.value)} class={inputCls} />
                   </div>
-                  <div class="flex flex-col gap-1">
+                  <div class="flex flex-col gap-1.5 md:gap-1">
                     <label class="text-[10px] uppercase tracking-wider workflow-muted">Provider</label>
                     <CustomSelect options={providerOptions} value={form().provider} onChange={v => updateField("provider", v)} />
                   </div>
-                  <div class="flex flex-col gap-1">
+                  <div class="flex flex-col gap-1.5 md:gap-1">
                     <label class="text-[10px] uppercase tracking-wider workflow-muted">Visibility</label>
                     <CustomSelect options={visibilityOptions} value={form().visibility} onChange={v => updateField("visibility", v)} />
                   </div>
                 </div>
 
                 {/* Row 2: Trigger Method, Endpoint, HTTP Method, Auth Type */}
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-                  <div class="flex flex-col gap-1">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 md:gap-3 md:mb-3">
+                  <div class="flex flex-col gap-1.5 md:gap-1">
                     <label class="text-[10px] uppercase tracking-wider workflow-muted">Trigger Method</label>
                     <CustomSelect options={triggerMethodOptions} value={form().triggerMethod} onChange={v => updateField("triggerMethod", v)} />
                   </div>
-                  <div class="flex flex-col gap-1">
+                  <div class="flex flex-col gap-1.5 md:gap-1">
                     <label class="text-[10px] uppercase tracking-wider workflow-muted">Webhook / Execution URL</label>
                     <input placeholder="https://..." value={form().executionEndpoint} onInput={e => updateField("executionEndpoint", e.currentTarget.value)} class={inputCls} />
                   </div>
-                  <div class="flex flex-col gap-1">
+                  <div class="flex flex-col gap-1.5 md:gap-1">
                     <label class="text-[10px] uppercase tracking-wider workflow-muted">HTTP Method</label>
                     <CustomSelect options={httpMethodOptions} value={form().httpMethod} onChange={v => updateField("httpMethod", v)} />
                   </div>
-                  <div class="flex flex-col gap-1">
+                  <div class="flex flex-col gap-1.5 md:gap-1">
                     <label class="text-[10px] uppercase tracking-wider workflow-muted">Auth Type</label>
                     <CustomSelect options={authTypeOptions} value={form().authType} onChange={v => updateField("authType", v)} />
                   </div>
@@ -297,7 +297,7 @@ export default function Workflows() {
 
                     {/* API Key */}
                     <Show when={form().authType === "api_key"}>
-                      <div class="grid grid-cols-2 gap-3">
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div class="flex flex-col gap-1">
                           <label class="text-[10px] workflow-muted">Header Name</label>
                           <input placeholder="x-api-key" value={form().apiKeyName} onInput={e => updateField("apiKeyName", e.currentTarget.value)} class={inputCls} />
@@ -311,7 +311,7 @@ export default function Workflows() {
 
                     {/* Header Secret */}
                     <Show when={form().authType === "header_secret"}>
-                      <div class="grid grid-cols-2 gap-3">
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div class="flex flex-col gap-1">
                           <label class="text-[10px] workflow-muted">Header Name</label>
                           <input placeholder="x-secret" value={form().headerName} onInput={e => updateField("headerName", e.currentTarget.value)} class={inputCls} />
@@ -334,24 +334,24 @@ export default function Workflows() {
                 </Show>
 
                 {/* Row 4: Description, Tags */}
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-                  <div class="md:col-span-2 flex flex-col gap-1">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 md:gap-3 md:mb-3">
+                  <div class="md:col-span-2 flex flex-col gap-1.5 md:gap-1">
                     <label class="text-[10px] uppercase tracking-wider workflow-muted">Description</label>
                     <textarea rows={3} placeholder="What does this workflow do? Provide complete info for the AI." value={form().description} onInput={e => updateField("description", e.currentTarget.value)} class={inputCls + " resize-y"} />
                   </div>
-                  <div class="flex flex-col gap-1">
+                  <div class="flex flex-col gap-1.5 md:gap-1">
                     <label class="text-[10px] uppercase tracking-wider workflow-muted">Tags</label>
                     <input placeholder="productivity, email" value={form().tags} onInput={e => updateField("tags", e.currentTarget.value)} class={inputCls} />
                   </div>
                 </div>
 
                 {/* Row 5: Input Schema, Output Schema */}
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                  <div class="flex flex-col gap-1">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 md:gap-3 md:mb-3">
+                  <div class="flex flex-col gap-1.5 md:gap-1">
                     <label class="text-[10px] uppercase tracking-wider workflow-muted">Input Schema (JSON)</label>
                     <textarea rows={3} placeholder='{}' value={form().inputSchemaJson} onInput={e => updateField("inputSchemaJson", e.currentTarget.value)} class={inputCls + " font-mono text-xs resize-y"} />
                   </div>
-                  <div class="flex flex-col gap-1">
+                  <div class="flex flex-col gap-1.5 md:gap-1">
                     <label class="text-[10px] uppercase tracking-wider workflow-muted">Output Schema (JSON)</label>
                     <textarea rows={3} placeholder='{}' value={form().outputSchemaJson} onInput={e => updateField("outputSchemaJson", e.currentTarget.value)} class={inputCls + " font-mono text-xs resize-y"} />
                   </div>
@@ -393,7 +393,7 @@ export default function Workflows() {
         </Show>
 
         {/* Toolbar */}
-        <div class="px-4 md:px-6 py-3 border-b border-slate-700/25 bg-black/10 shrink-0">
+        <div class={`px-4 md:px-6 py-3 border-b border-slate-700/25 bg-black/10 shrink-0 ${showCreateForm() ? "hidden md:block" : ""}`}>
           <div class="workflow-shell rounded-xl border border-neutral-800/70 bg-neutral-950/55 px-3 py-2 flex flex-col gap-2">
 
             {/* Row 1: Search + stats + view toggle */}
@@ -446,7 +446,7 @@ export default function Workflows() {
             </div>
 
             {/* Row 2: Filter dropdowns — wrap on mobile */}
-            <div class="flex flex-wrap items-center justify-end md:justify-start gap-2">
+            <div class="flex flex-wrap items-center justify-start gap-2">
               <CustomSelect
                 options={providerFilterOptions}
                 value={providerFilter()}
@@ -492,7 +492,7 @@ export default function Workflows() {
         </div>
 
         {/* Content */}
-        <div class="flex-1 overflow-y-auto px-6 py-6">
+        <div class={`flex-1 overflow-y-auto px-6 py-6 ${showCreateForm() ? "hidden md:block" : ""}`}>
           <Show when={workflows.loading}>
             <div class="workflow-shell flex items-center gap-2 text-sm workflow-muted py-8">
               <div class="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />

@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "dev": "vinxi dev --port 5173",
     "build": "vinxi build",
     "start": "vinxi start",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit",
     "test": "bun test test",
     "test:unit": "bun test test",
     "e2e": "bunx playwright test",

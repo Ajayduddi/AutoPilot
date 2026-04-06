@@ -49,36 +49,36 @@ bun run test
 Backend:
 
 ```bash
-bun --filter backend run dev
-bun --filter backend run start
-bun --filter backend run build
-bun --filter backend run typecheck
-bun --filter backend run lint
-bun --filter backend run test
+bun --filter=backend run dev
+bun --filter=backend run start
+bun --filter=backend run build
+bun --filter=backend run typecheck
+bun --filter=backend run lint
+bun --filter=backend run test
 ```
 
 Backend DB:
 
 ```bash
-bun --filter backend run db:generate
-bun --filter backend run db:migrate
-bun --filter backend run db:seed
-bun --filter backend run db:preflight
-bun --filter backend run db:repair
-bun --filter backend run db:repair:analyze
-bun --filter backend run db:repair:apply
-bun --filter backend run db:push
-bun --filter backend run db:push:guarded
+bun --filter=backend run db:generate
+bun --filter=backend run db:migrate
+bun --filter=backend run db:seed
+bun --filter=backend run db:preflight
+bun --filter=backend run db:repair
+bun --filter=backend run db:repair:analyze
+bun --filter=backend run db:repair:apply
+bun --filter=backend run db:push
+bun --filter=backend run db:push:guarded
 ```
 
 Frontend:
 
 ```bash
-bun --filter frontend run dev
-bun --filter frontend run build
-bun --filter frontend run start
-bun --filter frontend run typecheck
-bun --filter frontend run test
+bun --filter=frontend run dev
+bun --filter=frontend run build
+bun --filter=frontend run start
+bun --filter=frontend run typecheck
+bun --filter=frontend run test
 ```
 
 ## 5) Testing Policy

@@ -150,7 +150,7 @@ describe("LLM fallback chain", () => {
     (WorkflowService as any).getAll = originalGetAll;
   });
 
-  it("parseIntent returns deterministic chat fallback when all candidates fail", async () => {
+  it("parseIntent returns direct-reply recovery when parseIntent fails but generateReply succeeds", async () => {
     const originalResolve = AutoModelRouterService.resolveCandidates;
     const originalGetAll = WorkflowService.getAll;
 
@@ -168,7 +168,7 @@ describe("LLM fallback chain", () => {
 
     const parsed = await LLMService.parseIntent("hello");
     expect(parsed.type).toBe("chat");
-    expect(String(parsed.reply || "")).toContain("lost connection");
+    expect(String(parsed.reply || "")).toBe("unused");
 
     (AutoModelRouterService as any).resolveCandidates = originalResolve;
     (WorkflowService as any).getAll = originalGetAll;
@@ -186,7 +186,7 @@ describe("LLM fallback chain", () => {
 
     const parsed = await LLMService.parseIntent("hello");
     expect(parsed.type).toBe("chat");
-    expect(String(parsed.reply || "")).toContain("lost connection");
+    expect(String(parsed.reply || "")).toContain("couldn't reach the selected model");
 
     (AutoModelRouterService as any).resolveCandidates = originalResolve;
     (WorkflowService as any).getAll = originalGetAll;

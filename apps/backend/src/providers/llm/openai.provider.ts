@@ -55,6 +55,24 @@ export class OpenAIProvider implements ILLMProvider {
     }
   }
 
+  private async readErrorBody(response: Response): Promise<string | null> {
+    try {
+      const payload = await response.clone().json() as any;
+      if (typeof payload?.error === 'string' && payload.error.trim()) return payload.error.trim();
+      if (typeof payload?.error?.message === 'string' && payload.error.message.trim()) return payload.error.message.trim();
+      if (typeof payload?.message === 'string' && payload.message.trim()) return payload.message.trim();
+      return null;
+    } catch {
+      try {
+        const text = await response.clone().text();
+        const trimmed = text.trim();
+        return trimmed ? trimmed.slice(0, 500) : null;
+      } catch {
+        return null;
+      }
+    }
+  }
+
   // ── parseIntent ──────────────────────────────────────────────────
 
   async parseIntent(
@@ -124,7 +142,10 @@ CRITICAL: Do NOT guess current date/time. If deterministic clock metadata is ava
       });
 
       if (!response.ok) {
-        throw new Error(`OpenAI API Error: ${response.status} ${response.statusText}`);
+        const body = await this.readErrorBody(response);
+        throw new Error(body
+          ? `OpenAI API Error: ${response.status} ${response.statusText} - ${body}`
+          : `OpenAI API Error: ${response.status} ${response.statusText}`);
       }
       
             const data = await response.json();
@@ -136,8 +157,13 @@ CRITICAL: Do NOT guess current date/time. If deterministic clock metadata is ava
          return JSON.parse(jsonMatch[0]) as ParsedIntent;
       }
       return JSON.parse(content) as ParsedIntent;
-    } catch (e) {
-      logger.error({ scope: 'llm.openai', message: 'parseIntent error', model: this.modelName, err: e });
+    } catch (e: any) {
+      logger.error({
+        scope: 'llm.openai',
+        message: 'parseIntent error',
+        model: this.modelName,
+        errMessage: e?.message || String(e),
+      });
       // Fallback intent proxy logic in case model fails to output JSON
             const msg = message.toLowerCase();
       if (msg.includes('email') || msg.includes('scan')) {
@@ -146,8 +172,21 @@ CRITICAL: Do NOT guess current date/time. If deterministic clock metadata is ava
       if (msg.includes('task') || msg.includes('todo')) {
          return { type: 'workflow', workflowKey: 'wf_create_task', parameters: { text: message } };
       }
-      
-      return { type: 'chat', reply: await this.generateReply(message) };
+
+      try {
+        return { type: 'chat', reply: await this.generateReply(message) };
+      } catch (replyErr: any) {
+        logger.warn({
+          scope: 'llm.openai',
+          message: 'parseIntent chat fallback failed; returning safe static response',
+          model: this.modelName,
+          errMessage: replyErr?.message || String(replyErr),
+        });
+        return {
+          type: 'chat',
+          reply: "I couldn't reach the selected AI model right now. Please check provider settings or switch to another model.",
+        };
+      }
     }
   }
 
@@ -248,13 +287,21 @@ Rules:
       });
 
       if (!response.ok) {
-        throw new Error(`OpenAI API Error: ${response.status} ${response.statusText}`);
+        const body = await this.readErrorBody(response);
+        throw new Error(body
+          ? `OpenAI API Error: ${response.status} ${response.statusText} - ${body}`
+          : `OpenAI API Error: ${response.status} ${response.statusText}`);
       }
       
             const data = await response.json();
       return data.choices[0].message.content;
     } catch (e: any) {
-      logger.error({ scope: 'llm.openai', message: 'generateReply error', model: this.modelName, err: e });
+      logger.error({
+        scope: 'llm.openai',
+        message: 'generateReply error',
+        model: this.modelName,
+        errMessage: e?.message || String(e),
+      });
       throw new Error(`OpenAI-compatible generateReply failed: ${e?.message || 'unknown error'}`);
     }
   }
@@ -289,7 +336,12 @@ Rules:
     });
 
     if (!response.ok || !response.body) {
-      throw new Error(`OpenAI streaming error: ${response.status} ${response.statusText}`);
+      const body = await this.readErrorBody(response);
+      throw new Error(
+        body
+          ? `OpenAI streaming error: ${response.status} ${response.statusText} - ${body}`
+          : `OpenAI streaming error: ${response.status} ${response.statusText}`,
+      );
     }
 
         const reader = response.body.getReader();

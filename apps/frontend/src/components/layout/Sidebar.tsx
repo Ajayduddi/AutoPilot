@@ -153,7 +153,12 @@ export function Sidebar() {
           </div>
           <div class="flex-1 overflow-y-auto space-y-px scrollbar-custom">
             <Show when={threads.loading}>
-              <p class="px-2 py-3 text-xs text-neutral-600">Loading...</p>
+              <div class="space-y-1 px-1">
+                <div class="h-8 rounded-lg bg-neutral-800/40 animate-pulse" />
+                <div class="h-8 rounded-lg bg-neutral-800/30 animate-pulse" style="animation-delay: 100ms" />
+                <div class="h-8 rounded-lg bg-neutral-800/20 animate-pulse" style="animation-delay: 200ms" />
+                <div class="h-8 w-3/4 rounded-lg bg-neutral-800/15 animate-pulse" style="animation-delay: 300ms" />
+              </div>
             </Show>
             <Show when={!threads.loading && (threads() || []).length === 0}>
               <p class="px-2 py-3 text-xs text-neutral-600">No conversations yet</p>

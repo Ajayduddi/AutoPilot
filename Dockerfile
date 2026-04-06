@@ -37,6 +37,7 @@ RUN bun install --production --frozen-lockfile --filter=backend
 
 # Runtime artifacts only (single-process runtime)
 COPY --from=build /app/apps/backend/dist /app/apps/backend/dist
+COPY --from=build /app/apps/backend/src/db/migrations /app/apps/backend/src/db/migrations
 COPY --from=build /app/apps/frontend/.output/public /app/public
 
 RUN find /app -name "*.map" -type f -delete \

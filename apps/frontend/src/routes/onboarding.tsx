@@ -56,6 +56,15 @@ export default function OnboardingPage() {
     }
   }
 
+  function startGoogleAuth() {
+    const target = auth.googleStartUrl();
+    if (!target) {
+      setLocalError("Google sign-in endpoint is unavailable. Please try again.");
+      return;
+    }
+    window.location.assign(target);
+  }
+
   return (
     <main class="min-h-screen bg-[#0a0a0a] text-neutral-100 flex items-center justify-center px-5">
       <Title>Onboarding — AutoPilot</Title>
@@ -131,8 +140,9 @@ export default function OnboardingPage() {
               <span class="bg-[#121212] px-3 text-[13px] text-neutral-500">Or continue with</span>
             </div>
           </div>
-          <a
-            href={auth.googleStartUrl()}
+          <button
+            type="button"
+            onClick={startGoogleAuth}
             class="h-12 w-full flex items-center justify-center gap-3 rounded-xl border border-neutral-700 bg-[#1a1a1a] text-[15px] text-neutral-200 font-medium hover:text-white hover:bg-[#1f1f1f] hover:border-neutral-600 transition-all"
           >
             <svg class="h-5 w-5" viewBox="0 0 24 24">
@@ -142,7 +152,7 @@ export default function OnboardingPage() {
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
             </svg>
             Google
-          </a>
+          </button>
         </Show>
 
         <Show when={localError()}>

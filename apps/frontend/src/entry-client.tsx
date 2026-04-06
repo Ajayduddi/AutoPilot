@@ -69,7 +69,32 @@ if (typeof window !== "undefined" && "serviceWorker" in navigator) {
   Promise.resolve().then(() => {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("/sw.js").then(
-        (registration) => console.log("[SW] Registered:", registration.scope),
+        (registration) => {
+          console.log("[SW] Registered:", registration.scope);
+          registration.addEventListener("updatefound", () => {
+            const installing = registration.installing;
+            if (!installing) return;
+            installing.addEventListener("statechange", () => {
+              if (installing.state === "installed" && navigator.serviceWorker.controller) {
+                installing.postMessage({ type: "SKIP_WAITING" });
+              }
+            });
+          });
+          navigator.serviceWorker.addEventListener("message", (event) => {
+            const type = event.data?.type;
+            if (type === "SW_QUEUE_EVENT") {
+              console.info("[SW queue]", event.data?.payload);
+            } else if (type === "SW_STATS") {
+              console.debug("[SW stats]", event.data?.payload);
+            }
+          });
+          navigator.serviceWorker.ready
+            .then(() => navigator.serviceWorker.controller?.postMessage({ type: "GET_SW_STATS" }))
+            .catch(() => {});
+          window.addEventListener("online", () => {
+            navigator.serviceWorker.controller?.postMessage({ type: "RETRY_QUEUED_REQUESTS" });
+          });
+        },
         (err) => console.error("[SW] Registration failed:", err)
       );
     });

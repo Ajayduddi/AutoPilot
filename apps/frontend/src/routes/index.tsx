@@ -1462,25 +1462,162 @@ export function ChatPage(props: ChatPageProps = {}) {
           </Show>
 
           {/* Header */}
-          <header class="px-3 md:px-5 py-3 flex items-center justify-between shrink-0 min-h-[52px]">
-            <div class={`flex items-center gap-1 md:gap-2 transition-[margin] duration-300 ${!isSidebarOpen() ? "md:ml-12" : ""}`}>
+          <header class="px-3 md:px-5 py-3 grid grid-cols-[auto_1fr_auto] md:flex items-center md:justify-between shrink-0 min-h-[52px]">
 
+            {/* Col 1 (mobile) / left group (desktop): hamburger + model selector on desktop */}
+            <div class={`flex items-center md:gap-2 transition-[margin] duration-300 ${!isSidebarOpen() ? "md:ml-12" : ""}`}>
               {/* Mobile Sidebar Toggle */}
               <button
                 onClick={() => mobileMenu.toggle()}
-                class="md:hidden p-2 -ml-1 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800/50"
+                class="md:hidden p-2 text-neutral-300 hover:text-white rounded-xl bg-[#1e1e1e] border border-neutral-700/60 shadow-[0_2px_12px_rgba(0,0,0,0.3)] hover:border-neutral-500/70 hover:bg-[#242424] transition-all duration-200"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
               </button>
 
+              {/* Desktop-only: model selector inline */}
+              <div class="hidden md:block">
+                <Show when={!aggregatedModels.loading} fallback={
+                  <div class="text-[14px] text-neutral-600 animate-pulse px-3 py-1.5">Loading Models...</div>
+                }>
+                  <Show when={aggregatedModels() && aggregatedModels()!.length > 0} fallback={
+                    <div class="text-[14px] text-red-400/80 px-3 py-1.5">No models available.</div>
+                  }>
+                    <div class="relative group">
+                      <button
+                        onClick={() => {
+                          const next = !isModelDropdownOpen();
+                          setIsModelDropdownOpen(next);
+                          if (next) {
+                            setModelProviderTab("all");
+                            setShowModelSearch(false);
+                            setModelSearchQuery("");
+                          }
+                        }}
+                        class="relative bg-transparent flex items-center gap-2 text-[17px] font-medium text-neutral-300 hover:text-white hover:bg-white/5 pl-3 pr-9 py-1.5 rounded-xl transition-all duration-200 cursor-pointer focus:outline-none"
+                      >
+                        <span class="truncate block w-full">{currentSelectionLabel()}</span>
+                        <div class="absolute inset-y-0 right-2.5 flex items-center text-neutral-500 pointer-events-none">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </div>
+                      </button>
+
+                      <Show when={isModelDropdownOpen()}>
+                        <div class="fixed inset-0 z-40" onClick={() => setIsModelDropdownOpen(false)}></div>
+                        <div class="absolute top-full left-0 mt-1.5 w-[360px] max-w-[calc(100vw-24px)] z-50 bg-[#1a1a1a]/95 backdrop-blur-xl border border-neutral-800/40 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.6)] overflow-hidden flex flex-col">
+                          <div class="px-3 pt-2 pb-0 border-b border-neutral-800/60">
+                            <div class="flex items-center justify-between gap-2">
+                              <div class="flex items-center gap-4 overflow-x-auto scrollbar-thin pr-1">
+                                <For each={providerTabs()}>
+                                  {(tab) => (
+                                    <button
+                                      onClick={() => setModelProviderTab(tab)}
+                                      class={`relative pb-2 text-xs whitespace-nowrap transition-all duration-150 border-b-2 ${modelProviderTab() === tab
+                                          ? "text-neutral-100 border-neutral-100"
+                                          : "text-neutral-500 border-transparent hover:text-neutral-300"
+                                        }`}
+                                    >
+                                      {tab === "all" ? "All" : prettyProviderName(tab)}
+                                    </button>
+                                  )}
+                                </For>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  const next = !showModelSearch();
+                                  setShowModelSearch(next);
+                                  if (!next) setModelSearchQuery("");
+                                }}
+                                class={`mb-2 shrink-0 rounded-md p-1.5 transition-colors ${showModelSearch()
+                                    ? "text-neutral-100 bg-white/10"
+                                    : "text-neutral-500 hover:text-neutral-300 hover:bg-white/5"
+                                  }`}
+                                title="Search models"
+                                aria-label="Search models"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                  <circle cx="11" cy="11" r="8" />
+                                  <path d="m21 21-4.3-4.3" />
+                                </svg>
+                              </button>
+                            </div>
+                            <Show when={showModelSearch()}>
+                              <div class="pt-2 pb-2">
+                                <input
+                                  type="text"
+                                  value={modelSearchQuery()}
+                                  onInput={(e) => setModelSearchQuery(e.currentTarget.value)}
+                                  placeholder="Filter models by name..."
+                                  class="w-full h-8 rounded-lg border border-neutral-800/80 bg-neutral-900/80 px-2.5 text-xs text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-neutral-600"
+                                />
+                              </div>
+                            </Show>
+                          </div>
+                          <div class="max-h-[250px] overflow-y-auto scrollbar-custom py-2 flex flex-col">
+                            <Show when={modelDropdownOptions().length > 0} fallback={
+                              <div class="px-4 py-5 text-xs text-neutral-500">No models in this provider.</div>
+                            }>
+                              <For each={modelDropdownOptions()}>
+                                {(m, i) => {
+                                  const val = `${m.providerId}:::${m.modelName}`;
+                                  const isSelected = selectedModelStr() === val;
+                                  const isAuto = m.providerId === "auto" && m.modelName === "auto";
+                                  const showAutoDivider = isAuto && i() === 0 && modelDropdownOptions().length > 1;
+                                  return (
+                                    <>
+                                      <button
+                                        onClick={() => { setSelectedModelStr(val); setIsModelDropdownOpen(false); }}
+                                        class={`w-full flex items-start gap-2.5 text-left px-4 py-2 transition-all duration-150 text-[14px] ${isSelected
+                                            ? "bg-indigo-600/15 text-indigo-300"
+                                            : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
+                                          }`}
+                                      >
+                                        <Show when={isSelected} fallback={<div class="w-4 h-4 mt-0.5 shrink-0"></div>}>
+                                          <svg class="shrink-0 mt-0.5" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                        </Show>
+                                        <div class="min-w-0 flex-1">
+                                          <Show
+                                            when={!isAuto}
+                                            fallback={
+                                              <div class="flex flex-col">
+                                                <span class="font-medium truncate">Auto (Agent decides each turn)</span>
+                                                <span class="text-[11px] text-neutral-500 truncate">
+                                                  Routes to the best available provider/model and can fail over automatically.
+                                                </span>
+                                              </div>
+                                            }
+                                          >
+                                            <span class="truncate font-medium">
+                                              {prettyProviderName(m.providerName)}: {m.modelName}
+                                            </span>
+                                          </Show>
+                                        </div>
+                                      </button>
+                                      <Show when={showAutoDivider}>
+                                        <div class="my-1 mx-4 border-t border-neutral-800/70" />
+                                      </Show>
+                                    </>
+                                  );
+                                }}
+                              </For>
+                            </Show>
+                          </div>
+                        </div>
+                      </Show>
+                    </div>
+                  </Show>
+                </Show>
+              </div>
+            </div>
+
+            {/* Col 2 (mobile): centered model selector — hidden on desktop */}
+            <div class="md:hidden flex justify-center items-center min-w-0">
               <Show when={!aggregatedModels.loading} fallback={
-                <div class="text-[14px] text-neutral-600 animate-pulse px-3 py-1.5">Loading Models...</div>
+                <div class="text-[14px] text-neutral-600 animate-pulse px-3 py-1.5">Loading...</div>
               }>
                 <Show when={aggregatedModels() && aggregatedModels()!.length > 0} fallback={
-                  <div class="text-[14px] text-red-400/80 px-3 py-1.5">No models available.</div>
+                  <div class="text-[13px] text-red-400/80 px-2 py-1">No models</div>
                 }>
-                  {/* Modern Custom Dropdown */}
-                  <div class="relative group">
+                  <div class="relative">
                     <button
                       onClick={() => {
                         const next = !isModelDropdownOpen();
@@ -1491,20 +1628,20 @@ export function ChatPage(props: ChatPageProps = {}) {
                           setModelSearchQuery("");
                         }
                       }}
-                      class="relative bg-transparent flex items-center gap-1.5 md:gap-2 text-[14px] md:text-[17px] font-medium text-neutral-300 hover:text-white hover:bg-white/5 pl-1.5 pr-7 md:pl-3 md:pr-9 py-1.5 rounded-xl transition-all duration-200 cursor-pointer focus:outline-none max-w-[170px] sm:max-w-[220px] md:max-w-none text-left"
+                      class="relative bg-transparent flex items-center gap-1 text-[14px] font-semibold text-neutral-200 hover:text-white py-1.5 pl-2 pr-6 rounded-xl transition-all duration-200 cursor-pointer focus:outline-none max-w-[220px]"
                     >
-                      <span class="truncate block w-full">{currentSelectionLabel()}</span>
-                      <div class="absolute inset-y-0 right-1.5 md:right-2.5 flex items-center text-neutral-500 pointer-events-none">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                      <span class="truncate block">{currentSelectionLabel()}</span>
+                      <div class="absolute inset-y-0 right-1 flex items-center text-neutral-500 pointer-events-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                       </div>
                     </button>
 
                     <Show when={isModelDropdownOpen()}>
-                      {/* Invisible backdrop to close on click outside */}
-                      <div class="fixed inset-0 z-40" onClick={() => setIsModelDropdownOpen(false)}></div>
-
-                      {/* Dropdown Menu - glass effect, nice border, bounded width for mobile */}
-                      <div class="absolute top-full left-0 mt-1.5 w-[360px] max-w-[calc(100vw-24px)] z-50 bg-[#1a1a1a]/95 backdrop-blur-xl border border-neutral-800/40 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.6)] overflow-hidden">
+                      <div class="fixed inset-0 z-40 bg-black/50" onClick={() => setIsModelDropdownOpen(false)}></div>
+                      <div class="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl max-h-[70vh] bg-[#1a1a1a]/95 backdrop-blur-xl border border-neutral-800/40 shadow-[0_8px_30px_rgb(0,0,0,0.6)] overflow-hidden flex flex-col">
+                        <div class="flex justify-center pt-2 pb-1">
+                          <div class="w-8 h-1 rounded-full bg-neutral-600" />
+                        </div>
                         <div class="px-3 pt-2 pb-0 border-b border-neutral-800/60">
                           <div class="flex items-center justify-between gap-2">
                             <div class="flex items-center gap-4 overflow-x-auto scrollbar-thin pr-1">
@@ -1522,7 +1659,6 @@ export function ChatPage(props: ChatPageProps = {}) {
                                 )}
                               </For>
                             </div>
-
                             <button
                               onClick={() => {
                                 const next = !showModelSearch();
@@ -1542,7 +1678,6 @@ export function ChatPage(props: ChatPageProps = {}) {
                               </svg>
                             </button>
                           </div>
-
                           <Show when={showModelSearch()}>
                             <div class="pt-2 pb-2">
                               <input
@@ -1555,9 +1690,7 @@ export function ChatPage(props: ChatPageProps = {}) {
                             </div>
                           </Show>
                         </div>
-
-                        {/* 6 items * ~40px + padding = 250px max height */}
-                        <div class="max-h-[250px] overflow-y-auto scrollbar-custom py-2 flex flex-col">
+                        <div class="flex-1 overflow-y-auto scrollbar-custom py-2 flex flex-col">
                           <Show when={modelDropdownOptions().length > 0} fallback={
                             <div class="px-4 py-5 text-xs text-neutral-500">No models in this provider.</div>
                           }>
@@ -1612,10 +1745,12 @@ export function ChatPage(props: ChatPageProps = {}) {
                 </Show>
               </Show>
             </div>
-            <div class="flex items-center gap-2">
+
+            {/* Col 3 (mobile) / right group (desktop): customize button */}
+            <div class="flex items-center gap-2 justify-end">
               <button
                 onClick={() => setIsCustomizePanelOpen(true)}
-                class="w-9 h-9 rounded-lg border border-neutral-800/70 bg-neutral-900/70 text-neutral-400 hover:text-neutral-100 hover:border-neutral-600 hover:bg-neutral-800/80 transition-colors flex items-center justify-center"
+                class="w-9 h-9 rounded-xl bg-[#1e1e1e] border border-neutral-700/60 shadow-[0_2px_12px_rgba(0,0,0,0.3)] text-neutral-300 hover:text-white hover:border-neutral-500/70 hover:bg-[#242424] md:rounded-lg md:border-neutral-800/70 md:bg-neutral-900/70 md:text-neutral-400 md:shadow-none md:hover:text-neutral-100 md:hover:border-neutral-600 md:hover:bg-neutral-800/80 transition-all duration-200 flex items-center justify-center"
                 title="Customize chat"
                 aria-label="Customize chat"
               >

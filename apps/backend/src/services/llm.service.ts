@@ -43,6 +43,13 @@ function formatAttemptChain(attempts: LlmCandidateAttempt[]): string {
     .join(' -> ');
 }
 
+function formatAttemptErrors(attempts: LlmCandidateAttempt[]): string {
+  return attempts
+    .filter((a) => !a.ok && a.error)
+    .map((a) => `${a.candidate.providerLabel}:${a.candidate.model} => ${a.error}`)
+    .join(' | ');
+}
+
 /**
  * Reads max candidate count for auto-router from environment.
  *
@@ -359,11 +366,47 @@ export class LLMService {
       scope: 'llm.service',
       message: 'parseIntent failed across candidates',
       attempted: formatAttemptChain(attempts),
+      errors: formatAttemptErrors(attempts),
     });
+
+    // Fallback path: parseIntent can fail on slower OpenAI-compatible providers
+    // even when direct generation would still succeed. Try a direct chat answer.
+    for (const candidate of decision.candidates) {
+      try {
+        const directReply = await this.withTimeout(
+          candidate.providerInstance.generateReply(
+            message,
+            workflowContext,
+            history,
+            context,
+            options?.generation,
+          ),
+          generateReplyTimeoutMs(),
+          `generateReply-fallback(${candidate.candidateKey})`,
+        );
+        const safeReply = String(directReply || '').trim();
+        if (safeReply) {
+          incrementCounter("autopilot_llm_parse_intent_fallback_total", { reason: "direct_reply_recovery" });
+          return {
+            type: 'chat',
+            reply: safeReply,
+          };
+        }
+      } catch (err: any) {
+        logger.warn({
+          scope: 'llm.service',
+          message: 'parseIntent fallback direct reply failed',
+          provider: candidate.provider,
+          model: candidate.model,
+          errMessage: err?.message || String(err),
+        });
+      }
+    }
+
     incrementCounter("autopilot_llm_parse_intent_fallback_total", { reason: "all_candidates_failed" });
     return {
       type: 'chat',
-      reply: "Sorry, I lost connection to my AI provider backend. Please check the configurations."
+      reply: "I couldn't reach the selected model in time. Please try again or switch to a faster model/provider.",
     };
   }
 

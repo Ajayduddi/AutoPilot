@@ -266,6 +266,7 @@ export type ApprovalDto = {
 export type ProviderConfigDto = {
   id: string;
   provider: string;
+  customName?: string | null;
   model?: string | null;
   apiKey?: string | null;
   baseUrl?: string | null;

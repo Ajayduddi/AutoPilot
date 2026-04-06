@@ -57,10 +57,10 @@ export function SettingsSectionAccount(props: {
   handleApprovalModeChange: (mode: "default" | "auto") => void;
 }) {
   return (
-    <section class={`${settingsCls.sectionCard} p-5 md:p-8 space-y-5 md:space-y-7`}>
-      <div class="border-b border-neutral-800/40 pb-4">
-        <h2 class="text-lg md:text-xl font-semibold text-neutral-100 tracking-tight">User Management</h2>
-        <p class="text-[13px] md:text-[14px] text-neutral-500 mt-1">Manage your account profile and credentials.</p>
+    <section class={`${settingsCls.sectionCard} px-0 md:px-0 space-y-0 md:space-y-7`}>
+      <div class="hidden md:block border-b border-neutral-800/40 pb-4">
+        <h2 class="text-xl font-semibold text-neutral-100 tracking-tight">User Management</h2>
+        <p class="text-[14px] text-neutral-500 mt-1">Manage your account profile and credentials.</p>
       </div>
 
       <Show
@@ -71,8 +71,8 @@ export function SettingsSectionAccount(props: {
           </div>
         }
       >
-        <div class="space-y-5 md:space-y-6">
-          <div class={`${settingsCls.subCard} p-4 md:p-5`}>
+        <div class="flex flex-col md:space-y-6 divide-y divide-neutral-800/60 md:divide-none">
+          <div class={`${settingsCls.subCard} px-4 py-5 md:p-5`}>
             <div class="mb-4">
               <p class="text-[15px] font-medium text-neutral-200 tracking-tight">Profile</p>
               <p class="text-[13px] text-neutral-500 mt-0.5">Update your username and timezone preferences.</p>
@@ -127,7 +127,7 @@ export function SettingsSectionAccount(props: {
             </Show>
           </div>
 
-          <div class={`${settingsCls.subCard} p-4 md:p-5`}>
+          <div class={`${settingsCls.subCard} px-4 py-5 md:p-5`}>
             <div class="mb-4">
               <p class="text-[15px] font-medium text-neutral-200 tracking-tight">Email</p>
               <p class="text-[13px] text-neutral-500 mt-0.5">Change your account's primary email address.</p>
@@ -182,7 +182,7 @@ export function SettingsSectionAccount(props: {
             </Show>
           </div>
 
-          <div class={`${settingsCls.subCard} p-4 md:p-5`}>
+          <div class={`${settingsCls.subCard} px-4 py-5 md:p-5`}>
             <div class="mb-4">
               <p class="text-[15px] font-medium text-neutral-200 tracking-tight">Agent Approval Mode</p>
               <p class="text-[13px] text-neutral-500 mt-0.5">Control how the agent executes workflows and sensitive actions.</p>
@@ -197,7 +197,7 @@ export function SettingsSectionAccount(props: {
                   disabled={props.approvalModeSaving()}
                   class={`${settingsCls.rowCard} p-4 text-left transition-colors ${
                     props.runtimePreferences()?.approvalMode === "default"
-                      ? "border-indigo-400/50 bg-indigo-500/10"
+                      ? "!border-indigo-500/30 !bg-indigo-500/10 !rounded-xl"
                       : "hover:border-neutral-600"
                   }`}
                 >
@@ -220,7 +220,7 @@ export function SettingsSectionAccount(props: {
                   disabled={props.approvalModeSaving()}
                   class={`${settingsCls.rowCard} p-4 text-left transition-colors ${
                     props.runtimePreferences()?.approvalMode === "auto"
-                      ? "border-emerald-400/50 bg-emerald-500/10"
+                      ? "!border-emerald-500/30 !bg-emerald-500/10 !rounded-xl"
                       : "hover:border-neutral-600"
                   }`}
                 >
@@ -249,7 +249,7 @@ export function SettingsSectionAccount(props: {
             </Show>
           </div>
 
-          <div class={`${settingsCls.subCard} p-4 md:p-5`}>
+          <div class={`${settingsCls.subCard} px-4 py-5 md:p-5`}>
             <div class="mb-4">
               <p class="text-[15px] font-medium text-neutral-200 tracking-tight">Password</p>
               <p class="text-[13px] text-neutral-500 mt-0.5">Update your secure login password.</p>

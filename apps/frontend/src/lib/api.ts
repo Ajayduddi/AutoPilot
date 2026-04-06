@@ -1,6 +1,3 @@
-// Central API client for the AutoPilot backend
-// Base URL: defaults to localhost in dev, can be overridden via VITE_API_URL
-
 import type {
   AccountInfoDto,
   ApprovalDto,
@@ -16,7 +13,19 @@ import type {
   WorkflowRunDto,
   WebhookSecretDto,
 } from "@autopilot/shared";
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+import { API_BASE_URL } from "./api-base";
+
+// Central API client for the AutoPilot backend
+// Base URL: defaults to localhost in dev, can be overridden via VITE_API_URL
+const BASE_URL = API_BASE_URL;
+
+async function readJsonSafe(res: Response): Promise<any | null> {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Detects the browser timezone used for API request context headers.
@@ -69,11 +78,23 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     },
     ...options,
   });
+  const contentType = res.headers.get("content-type") || "";
+  const isJson = contentType.includes("application/json");
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body?.error || `HTTP ${res.status}`);
+    const body = isJson ? await readJsonSafe(res) : null;
+    const errorMessage =
+      body?.error?.message ||
+      body?.error ||
+      `HTTP ${res.status}`;
+    throw new Error(errorMessage);
   }
-  const json = await res.json();
+  if (!isJson) {
+    throw new Error(`Expected JSON response, got ${contentType || "unknown content-type"}`);
+  }
+  const json = await readJsonSafe(res);
+  if (!json) {
+    throw new Error("Failed to parse JSON response");
+  }
   return json.data ?? json;
 }
 
@@ -394,7 +415,7 @@ export const settingsApi = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
-  saveProviderConfig: (payload: { provider: string; model: string; apiKey?: string; baseUrl?: string }) =>
+  saveProviderConfig: (payload: { provider: string; model: string; apiKey?: string; baseUrl?: string; customName?: string }) =>
     request<ProviderConfigDto>("/api/settings/providers", {
       method: "POST",
       body: JSON.stringify(payload),

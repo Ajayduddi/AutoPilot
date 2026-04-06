@@ -11,9 +11,9 @@
  */
 import { db } from './index';
 import { users, workflows } from './schema';
-import { randomUUID } from 'crypto';
 import * as dotenv from 'dotenv';
-dotenv.config({ path: '../../.env' });
+const envPath = decodeURIComponent(new URL('../../../../.env', import.meta.url).pathname);
+dotenv.config({ path: envPath });
 
 /**
  * Seeds baseline users and workflows into the database.
@@ -25,7 +25,7 @@ dotenv.config({ path: '../../.env' });
  *
  * @example
  * ```bash
- * bun --filter backend run db:seed
+ * bun --filter=backend run db:seed
  * ```
  */
 async function seed() {
@@ -49,7 +49,7 @@ async function seed() {
 
     const sampleWorkflows = [
       {
-        id: randomUUID(),
+        id: crypto.randomUUID(),
         key: 'wf_create_task',
         name: 'Create Task in Google Tasks',
         description: 'Creates a task based on naturally input text.',
@@ -64,7 +64,7 @@ async function seed() {
         enabled: true,
       },
       {
-        id: randomUUID(),
+        id: crypto.randomUUID(),
         key: 'wf_scan_emails',
         name: 'Scan Important Emails',
         description: 'Finds important unread emails and summarizes them.',
@@ -79,7 +79,7 @@ async function seed() {
         enabled: true,
       },
       {
-        id: randomUUID(),
+        id: crypto.randomUUID(),
         key: 'wf_zapier_lead_enrich',
         name: 'Lead Enrichment',
         description: 'Enriches a lead record with contact information from Clearbit/Apollo.',
@@ -94,7 +94,7 @@ async function seed() {
         enabled: true,
       },
       {
-        id: randomUUID(),
+        id: crypto.randomUUID(),
         key: 'wf_make_daily_report',
         name: 'Daily Report Generator',
         description: 'Generates a daily summary report from multiple data sources.',
@@ -110,7 +110,7 @@ async function seed() {
         enabled: true,
       },
       {
-        id: randomUUID(),
+        id: crypto.randomUUID(),
         key: 'wf_custom_invoice',
         name: 'Invoice Follow-Up',
         description: 'Sends follow-up reminders for overdue invoices via custom webhook.',

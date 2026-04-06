@@ -707,7 +707,7 @@ select option:checked {
 
 @media (max-width: 768px) {
   .markdown-body.ai-markdown {
-    font-size: 0.92rem;
+    font-size: inherit;
     line-height: 1.68;
     max-width: 100%;
     width: 100%;
@@ -791,7 +791,7 @@ select option:checked {
 
   .markdown-body.ai-markdown .ai-md-table-wrap td:first-child,
   .markdown-body.ai-markdown .ai-md-table-wrap th:first-child {
-    min-width: 44px;
+    min-width: 140px;
   }
 
   .markdown-body.ai-markdown .ai-md-table-wrap .ai-col-description {
@@ -877,4 +877,14 @@ select option:checked {
   outline: 2px solid rgba(99, 102, 241, 0.5);
   outline-offset: 2px;
   border-radius: inherit;
+}
+
+/* ─── Scrollbar hide utility ─────────────────────────────────────────── */
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }

@@ -36,13 +36,13 @@ export function SettingsSectionWebhooks(props: {
   requestRevokeWebhookSecret: (id: string) => void;
 }) {
   return (
-    <section class={`${settingsCls.sectionCard} p-5 md:p-8 space-y-6 md:space-y-8`}>
-      <div class="border-b border-neutral-800/40 pb-4">
-        <h2 class="text-lg md:text-xl font-semibold text-neutral-100 tracking-tight">Webhooks & Secrets</h2>
-        <p class="text-[13px] md:text-[14px] text-neutral-500 mt-1">Configure unified callback endpoints and API keys for external trigger systems.</p>
+    <section class={`${settingsCls.sectionCard} px-0 md:px-0 flex flex-col md:space-y-8 divide-y divide-neutral-800/60 md:divide-none`}>
+      <div class="hidden md:block border-b border-neutral-800/40 pb-4">
+        <h2 class="text-xl font-semibold text-neutral-100 tracking-tight">Webhooks & Secrets</h2>
+        <p class="text-[14px] text-neutral-500 mt-1">Configure unified callback endpoints and API keys for external trigger systems.</p>
       </div>
 
-      <div class={`${settingsCls.subCard} p-4 sm:p-5`}>
+      <div class={`${settingsCls.subCard} px-4 py-5 md:p-5`}>
         <div class="mb-4">
           <p class="text-[14px] sm:text-[15px] font-medium text-neutral-200 tracking-tight">Callback Endpoints</p>
           <p class="text-[12px] sm:text-[13px] text-neutral-500 mt-1">
@@ -52,30 +52,31 @@ export function SettingsSectionWebhooks(props: {
 
         <div class="space-y-4">
           <div>
-            <div class="flex items-center justify-between mb-1.5 px-0.5">
-              <span class="text-[12px] font-medium text-neutral-300">Unified Callback (all providers)</span>
-            </div>
-            <div class="flex items-stretch gap-2">
-              <code class="flex-1 flex items-center px-4 py-2.5 sm:py-0 min-h-[44px] rounded-xl border border-neutral-700/60 bg-[#121212] text-neutral-300 font-mono text-[12px] sm:text-[13px] break-all sm:truncate shadow-inner leading-relaxed">
+
+            <div class="relative flex items-center">
+              <code class="flex-1 block overflow-x-auto whitespace-nowrap px-4 py-3 pr-12 min-h-[44px] rounded-xl border border-neutral-700/60 bg-[#121212] text-neutral-300 font-mono text-[13px] shadow-inner leading-relaxed [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 {unifiedCallbackUrl}
               </code>
-              <button
-                onClick={() => props.copyEndpoint("unified", unifiedCallbackUrl)}
-                class="flex items-center justify-center w-11 rounded-xl bg-neutral-800/50 hover:bg-neutral-700/80 text-neutral-400 hover:text-white border border-neutral-700/50 transition-colors shrink-0"
-                title="Copy endpoint URL"
-              >
-                <Show when={props.copiedEndpoint() === "unified"} fallback={
-                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                }>
-                  <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                </Show>
-              </button>
+              <div class="absolute right-1.5 flex items-center justify-center pointer-events-none">
+                <div class="w-4 h-full absolute right-8 bg-gradient-to-r from-transparent to-[#121212] pointer-events-none"></div>
+                <button
+                  onClick={() => props.copyEndpoint("unified", unifiedCallbackUrl)}
+                  class="flex items-center justify-center w-8 h-8 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors pointer-events-auto"
+                  title="Copy endpoint URL"
+                >
+                  <Show when={props.copiedEndpoint() === "unified"} fallback={
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  }>
+                    <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  </Show>
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div class={`${settingsCls.subCard} p-4 sm:p-5`}>
+      <div class={`${settingsCls.subCard} px-4 py-5 md:p-5`}>
         <div class="mb-4">
           <p class="text-[14px] sm:text-[15px] font-medium text-neutral-200 tracking-tight">Example HTTP Requests</p>
           <p class="text-[12px] sm:text-[13px] text-neutral-500 mt-1">Collapsed by default</p>
@@ -122,7 +123,7 @@ export function SettingsSectionWebhooks(props: {
         </div>
       </div>
 
-      <div class={`${settingsCls.subCard} p-4 sm:p-5`}>
+      <div class={`${settingsCls.subCard} px-4 py-5 md:p-5`}>
         <div class="mb-4">
           <p class="text-[14px] sm:text-[15px] font-medium text-neutral-200 tracking-tight">Callback Secret Keys</p>
           <p class="text-[12px] sm:text-[13px] text-neutral-500 mt-1">Send this secret in the <code>x-webhook-secret</code> HTTP header.</p>
@@ -202,17 +203,14 @@ export function SettingsSectionWebhooks(props: {
 
           <For each={props.activeWebhookSecrets()}>
             {(secret) => (
-              <div class="rounded-2xl border border-neutral-800/60 bg-[#121212] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-0 sm:gap-6 transition-colors hover:border-neutral-700/60 hover:bg-neutral-900/40">
+              <div class="bg-white/[0.03] md:bg-[#121212] !rounded-xl md:rounded-2xl border border-neutral-800/25 md:border-neutral-800/60 px-4 py-4 md:p-5 mb-3 md:mb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-0 sm:gap-6 transition-colors md:hover:border-neutral-700/60 md:hover:bg-neutral-900/40">
                 <div class="flex flex-col gap-2 min-w-0 flex-1 mb-4 sm:mb-0">
                   <div class="flex items-center gap-2.5">
                     <span class="text-[14px] sm:text-[15px] font-medium text-neutral-200 tracking-tight truncate">{secret.label || "Unnamed key"}</span>
                     <span class="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 leading-none shrink-0">
                       ACTIVE
                     </span>
-                  </div>
-                  <code class="text-[13px] text-neutral-400 font-mono truncate px-2 py-1 bg-neutral-900/50 rounded-lg border border-neutral-800/50 w-fit max-w-full">
-                    {secret.secretPrefix}...
-                  </code>
+                </div>
                 </div>
 
                 <div class="flex flex-row items-center justify-between sm:justify-end w-full sm:w-auto shrink-0 pt-4 sm:pt-0 border-t border-dashed border-neutral-800/50 sm:border-0 sm:border-solid gap-4 sm:gap-8">

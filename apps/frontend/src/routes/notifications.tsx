@@ -416,7 +416,7 @@ export default function Notifications() {
           <div class="max-w-5xl mx-auto flex flex-col gap-4">
             <div class="flex flex-row items-center justify-between gap-3 w-full">
               <div class="flex items-center gap-3 min-w-0">
-                <button onClick={() => mobileMenu.toggle()} class="md:hidden p-2 -ml-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800/50 shrink-0">
+                <button onClick={() => mobileMenu.toggle()} class="md:hidden p-2 text-neutral-300 hover:text-white rounded-xl bg-[#1e1e1e] border border-neutral-700/60 shadow-[0_2px_12px_rgba(0,0,0,0.3)] hover:border-neutral-500/70 hover:bg-[#242424] transition-all duration-200 shrink-0">
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
                 </button>
                 <div class="flex flex-col min-w-0">

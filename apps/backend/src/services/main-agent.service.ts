@@ -358,6 +358,11 @@ function evaluateRisk(candidate: WorkflowCandidate): {
  * higher-level route/service flows to keep responsibilities separated.
  */
 export class MainAgentService {
+  private static ensureReply(reply?: string): string {
+    const normalized = typeof reply === "string" ? reply.trim() : "";
+    return normalized || "I couldn't generate a response from the selected model right now. Please try another model or check provider connectivity.";
+  }
+
   static async decide(input: {
         userMessage: string;
     providerId?: string;
@@ -405,7 +410,7 @@ export class MainAgentService {
         planStepId: ids.planStepId,
         reasoning: formatReasoning(reasoning),
         reactState,
-        finalReply: intent.reply,
+        finalReply: this.ensureReply(intent.reply),
         requiresApproval: false,
       };
     }
@@ -493,7 +498,9 @@ export class MainAgentService {
         planStepId: ids.planStepId,
         reasoning: formatReasoning(reasoning),
         reactState,
-        finalReply: ranked.length > 1 ? buildClarificationReply(ranked) : intent.reply,
+        finalReply: ranked.length > 1
+          ? this.ensureReply(buildClarificationReply(ranked))
+          : this.ensureReply(intent.reply),
         requiresApproval: false,
       };
     }

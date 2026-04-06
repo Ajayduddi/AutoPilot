@@ -2,7 +2,7 @@ import { migrate as runMigrations } from 'drizzle-orm/postgres-js/migrator';
 import { closeDbConnection, db, dbClient } from './index';
 
 declare const Bun: {
-  file(path: string): {
+  file(path: string | URL): {
     text(): Promise<string>;
   };
   CryptoHasher: new (algorithm: 'sha256') => {
@@ -10,9 +10,13 @@ declare const Bun: {
   };
 };
 
+const MIGRATIONS_DIR = decodeURIComponent(
+  new URL('./migrations', import.meta.url).pathname,
+);
+const MIGRATION_JOURNAL_URL = new URL('./migrations/meta/_journal.json', import.meta.url);
+
 async function loadMigrationJournal() {
-  const journalPath = 'src/db/migrations/meta/_journal.json';
-  const journalRaw = await Bun.file(journalPath).text();
+  const journalRaw = await Bun.file(MIGRATION_JOURNAL_URL).text();
   const journal = JSON.parse(journalRaw) as {
     entries?: Array<{ tag: string; when: number }>;
   };
@@ -22,8 +26,8 @@ async function loadMigrationJournal() {
   }
 
   const latest = [...journal.entries].sort((a, b) => b.when - a.when)[0];
-  const sqlPath = `src/db/migrations/${latest.tag}.sql`;
-  const migrationSql = await Bun.file(sqlPath).text();
+  const sqlUrl = new URL(`./migrations/${latest.tag}.sql`, import.meta.url);
+  const migrationSql = await Bun.file(sqlUrl).text();
   const hash = new Bun.CryptoHasher('sha256').update(migrationSql).digest('hex');
 
   return {
@@ -144,7 +148,7 @@ async function baselineIfNeeded() {
 
 async function main() {
   try {
-    await runMigrations(db, { migrationsFolder: 'src/db/migrations' });
+    await runMigrations(db, { migrationsFolder: MIGRATIONS_DIR });
     console.log('[db:migrate] Migrations applied successfully.');
   } catch (error) {
     printMigrationError(error);
@@ -153,7 +157,7 @@ async function main() {
       throw error;
     }
 
-    await runMigrations(db, { migrationsFolder: 'src/db/migrations' });
+    await runMigrations(db, { migrationsFolder: MIGRATIONS_DIR });
     console.log('[db:migrate] Migrations completed after baseline recovery.');
   } finally {
     await closeDbConnection(5);

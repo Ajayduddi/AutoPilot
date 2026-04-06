@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { isWorkflowProceedPrompt } from "../../../../src/components/chat/blocks/QuestionMcqView";
+import { isWorkflowProceedPrompt } from "../../../../src/components/chat/blocks/question-mcq-utils";
 import type { QuestionMcqBlock } from "../../../../src/components/chat/types";
 
 function block(overrides: Partial<QuestionMcqBlock> = {}): QuestionMcqBlock {

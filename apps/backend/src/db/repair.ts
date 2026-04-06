@@ -11,7 +11,6 @@
  * Use analyze mode first to review planned actions before applying changes.
  */
 import * as dotenv from 'dotenv';
-import path from 'path';
 import postgres from 'postgres';
 import {
   collectIntegritySnapshot,
@@ -22,7 +21,8 @@ import {
   type OrphanWorkflowRun,
 } from './integrity';
 
-dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
+const envPath = decodeURIComponent(new URL('../../../../.env', import.meta.url).pathname);
+dotenv.config({ path: envPath });
 
 const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/chat_automation';
 const sql = postgres(connectionString, { prepare: false });
@@ -184,8 +184,8 @@ function printActionPlan(snapshot: {
  *
  * @example
  * ```bash
- * bun --filter backend run db:repair -- --analyze
- * bun --filter backend run db:repair -- --apply
+ * bun --filter=backend run db:repair -- --analyze
+ * bun --filter=backend run db:repair -- --apply
  * ```
  */
 async function main() {

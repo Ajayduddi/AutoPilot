@@ -1,0 +1,5 @@
+[test]
+exclude = [
+  "apps/frontend/e2e/**",
+  "apps/frontend/playwright.config.ts"
+]

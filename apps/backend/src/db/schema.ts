@@ -447,6 +447,7 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
 export const providerConfigs = pgTable('provider_configs', {
   id: text('id').primaryKey(),
   provider: text('provider').notNull(),
+  customName: text('custom_name'),
   model: text('model').notNull(),
   baseUrl: text('base_url'),
   apiKey: text('api_key'), // Encrypted or stored securely in prod

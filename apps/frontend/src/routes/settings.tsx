@@ -38,6 +38,7 @@ export default function Settings() {
 
   const [isAdding, setIsAdding] = createSignal(false);
   const [provider, setProvider] = createSignal("ollama");
+  const [customName, setCustomName] = createSignal("");
   const [apiKey, setApiKey] = createSignal("");
   const [baseUrl, setBaseUrl] = createSignal("");
   const [saving, setSaving] = createSignal(false);
@@ -258,6 +259,7 @@ export default function Settings() {
    */
   function resetForm() {
     setProvider("ollama");
+    setCustomName("");
     setApiKey("");
     setBaseUrl("");
     setErrorMsg("");
@@ -284,6 +286,7 @@ export default function Settings() {
       await settingsApi.saveProviderConfig({
         provider: provider(),
         model: "dynamic",
+        customName: customName().trim() || undefined,
         apiKey: apiKey(),
         baseUrl: baseUrl(),
       });
@@ -766,6 +769,8 @@ export default function Settings() {
             setIsAdding={setIsAdding}
             provider={provider}
             setProvider={setProvider}
+            customName={customName}
+            setCustomName={setCustomName}
             apiKey={apiKey}
             setApiKey={setApiKey}
             baseUrl={baseUrl}

@@ -9,11 +9,11 @@
  * Designed for CI/CD and operational runbooks to prevent risky migrations.
  */
 import * as dotenv from "dotenv";
-import path from "path";
 import postgres from "postgres";
 import { collectIntegritySnapshot, formatIntegritySummary } from "./integrity";
 
-dotenv.config({ path: path.resolve(__dirname, "../../../../.env") });
+const envPath = decodeURIComponent(new URL("../../../../.env", import.meta.url).pathname);
+dotenv.config({ path: envPath });
 
 const connectionString = process.env.DATABASE_URL || "postgres://postgres:postgres@localhost:5432/chat_automation";
 const sql = postgres(connectionString, { prepare: false });
@@ -29,7 +29,7 @@ const sql = postgres(connectionString, { prepare: false });
  *
  * @example
  * ```bash
- * bun --filter backend run db:preflight
+ * bun --filter=backend run db:preflight
  * ```
  */
 async function main() {

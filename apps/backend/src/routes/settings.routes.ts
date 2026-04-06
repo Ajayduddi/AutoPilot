@@ -202,6 +202,51 @@ function normalizeProviderBaseUrl(provider: string, baseUrl?: string | null): st
 }
 
 /**
+ * Normalizes OpenAI-compatible base URLs to API-root form for model discovery.
+ *
+ * @remarks
+ * Some providers document full endpoint URLs like `/v1/chat/completions`.
+ * Model listing requires `/v1/models`, so we trim endpoint suffixes.
+ */
+function normalizeOpenAICompatibleBase(baseUrl: string): string {
+  try {
+    const url = new URL(baseUrl);
+    const path = url.pathname.replace(/\/+$/, '');
+    if (path.endsWith('/chat/completions')) {
+      url.pathname = path.replace(/\/chat\/completions$/, '');
+      return url.toString().replace(/\/$/, '');
+    }
+    if (path.endsWith('/completions')) {
+      url.pathname = path.replace(/\/completions$/, '');
+      return url.toString().replace(/\/$/, '');
+    }
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return baseUrl
+      .replace(/\/chat\/completions\/?$/i, '')
+      .replace(/\/completions\/?$/i, '')
+      .replace(/\/$/, '');
+  }
+}
+
+/**
+ * Best-effort extraction of upstream JSON error message for non-OK responses.
+ */
+async function readUpstreamErrorMessage(response: Response): Promise<string | null> {
+  try {
+    const cloned = response.clone();
+    const data = await cloned.json() as any;
+    const err = data?.error;
+    if (typeof err === 'string' && err.trim()) return err.trim();
+    if (typeof err?.message === 'string' && err.message.trim()) return err.message.trim();
+    if (typeof data?.message === 'string' && data.message.trim()) return data.message.trim();
+  } catch {
+    // ignore non-json body
+  }
+  return null;
+}
+
+/**
  * Resolves base URL used for Ollama `/api/tags` calls.
  */
 function ollamaTagsBase(baseUrl: string): string {
@@ -453,7 +498,8 @@ router.patch('/runtime-preferences', async (req, res) => {
 // POST to insert a new provider config
 router.post('/providers', async (req, res, next) => {
   try {
-    const { provider, model, apiKey, baseUrl } = req.body;
+    const { provider, model, apiKey, baseUrl, customName } = req.body;
+    const normalizedCustomName = typeof customName === 'string' ? customName.trim().slice(0, 80) : '';
     
     // Deactivate existing defaults so the new one becomes the active
     await db.update(providerConfigs).set({ isDefault: false });
@@ -462,6 +508,7 @@ router.post('/providers', async (req, res, next) => {
     const [newConfig] = await db.insert(providerConfigs).values({
       id: "prov_" + crypto.randomUUID(),
       provider,
+      customName: normalizedCustomName || null,
       model,
       apiKey: encryptProviderApiKey(apiKey || null),
       baseUrl: baseUrl || null,
@@ -563,11 +610,19 @@ router.post('/fetch-models', rateLimit({ keyPrefix: 'settings-fetch-models', lim
     if (effectiveProvider === 'openai' || effectiveProvider === 'groq' || effectiveProvider === 'mistral') {
             const normalized = normalizeProviderBaseUrl(effectiveProvider, effectiveBaseUrl);
       assertSafeBaseUrl(normalized);
-            const url = `${normalized}/models`;
+            const apiBase = normalizeOpenAICompatibleBase(normalized);
+            const url = `${apiBase}/models`;
             const response = await safeFetchJson(url, {
         headers: effectiveApiKey ? { 'Authorization': `Bearer ${effectiveApiKey}` } : {}
       });
-      if (!response.ok) throw new Error(`HTTP Error: ${response.status} from ${url}`);
+      if (!response.ok) {
+        // Some OpenAI-compatible endpoints don't expose /models.
+        if (response.status === 404 || response.status === 405) {
+          return res.json({ status: 'ok', data: [] });
+        }
+        const upstream = await readUpstreamErrorMessage(response);
+        throw new Error(upstream ? `HTTP Error: ${response.status} from ${url} - ${upstream}` : `HTTP Error: ${response.status} from ${url}`);
+      }
             const data = await response.json();
       models = data.data?.map((m: any) => m.id) || [];
     } else if (effectiveProvider === 'ollama' || effectiveProvider === 'ollama_cloud') {

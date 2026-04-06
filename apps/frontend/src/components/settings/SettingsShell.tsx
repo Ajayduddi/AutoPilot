@@ -32,9 +32,9 @@ export function SettingsShell(props: {
   return (
     <main class="flex-1 flex flex-col h-full bg-[#0a0a0a] min-w-0">
       {/* Header */}
-      <header class="px-6 md:px-8 py-5 md:py-6 border-b border-neutral-800/40 shrink-0">
+      <header class="px-6 md:px-6 py-4 border-b border-neutral-800/40 shrink-0">
         <div class={`${settingsCls.pageContainer} flex items-center gap-3`}>
-          <button onClick={() => mobileMenu.toggle()} class="md:hidden p-2 -ml-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800/50 block">
+          <button onClick={() => mobileMenu.toggle()} class="md:hidden p-2 text-neutral-300 hover:text-white rounded-xl bg-[#1e1e1e] border border-neutral-700/60 shadow-[0_2px_12px_rgba(0,0,0,0.3)] hover:border-neutral-500/70 hover:bg-[#242424] transition-all duration-200 block">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
           </button>
           <div>
@@ -45,7 +45,7 @@ export function SettingsShell(props: {
       </header>
 
       {/* Body */}
-      <div class="flex-1 overflow-y-auto px-4 md:px-8 py-5 md:py-8">
+      <div class="flex-1 overflow-y-auto px-0 md:px-6 py-3 md:py-6">
         <div class={`${settingsCls.pageContainer} space-y-5 md:space-y-0`}>
           <Show when={props.notice()}>
             {(notice) => (
@@ -62,8 +62,9 @@ export function SettingsShell(props: {
           </Show>
 
           {/* Mobile tab pills */}
-          <div class="md:hidden">
-            <div class="inline-flex items-center rounded-xl border border-neutral-800/70 bg-neutral-950/60 p-1 gap-1 overflow-x-auto">
+          <div class="md:hidden px-4">
+            <div class="overflow-x-auto scrollbar-hide -mx-1 px-1">
+              <div class="inline-flex items-center rounded-xl border border-neutral-800/70 bg-neutral-950/60 p-1 gap-1 whitespace-nowrap">
               <For each={sections}>
                 {(item) => (
                   <button
@@ -79,12 +80,13 @@ export function SettingsShell(props: {
                 )}
               </For>
             </div>
+            </div>
           </div>
 
           <div class={settingsCls.contentGrid}>
             {/* Desktop sidebar nav */}
-            <aside class="hidden md:block sticky top-8">
-              <nav class="flex flex-col gap-1">
+            <aside class="hidden md:block sticky top-6 -mt-2">
+              <nav class="flex flex-col gap-1 rounded-2xl border border-neutral-800/60 bg-transparent p-2">
                 <For each={sections}>
                   {(item) => (
                     <button
