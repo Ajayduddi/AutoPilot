@@ -4,19 +4,45 @@ import { closeDbConnection, db, dbClient } from './index';
 declare const Bun: {
   file(path: string | URL): {
     text(): Promise<string>;
+    exists(): Promise<boolean>;
   };
   CryptoHasher: new (algorithm: 'sha256') => {
     update(data: string): { digest(format: 'hex'): string };
   };
 };
 
-const MIGRATIONS_DIR = decodeURIComponent(
-  new URL('./migrations', import.meta.url).pathname,
-);
-const MIGRATION_JOURNAL_URL = new URL('./migrations/meta/_journal.json', import.meta.url);
+type MigrationLocation = {
+  dir: string;
+  baseUrl: URL;
+  journalUrl: URL;
+};
 
-async function loadMigrationJournal() {
-  const journalRaw = await Bun.file(MIGRATION_JOURNAL_URL).text();
+const MIGRATION_LOCATION_CANDIDATES: MigrationLocation[] = [
+  {
+    dir: decodeURIComponent(new URL('./migrations', import.meta.url).pathname),
+    baseUrl: new URL('./migrations/', import.meta.url),
+    journalUrl: new URL('./migrations/meta/_journal.json', import.meta.url),
+  },
+  {
+    dir: decodeURIComponent(new URL('../src/db/migrations', import.meta.url).pathname),
+    baseUrl: new URL('../src/db/migrations/', import.meta.url),
+    journalUrl: new URL('../src/db/migrations/meta/_journal.json', import.meta.url),
+  },
+];
+
+async function resolveMigrationLocation(): Promise<MigrationLocation> {
+  for (const candidate of MIGRATION_LOCATION_CANDIDATES) {
+    if (await Bun.file(candidate.journalUrl).exists()) {
+      return candidate;
+    }
+  }
+
+  const tried = MIGRATION_LOCATION_CANDIDATES.map((candidate) => decodeURIComponent(candidate.journalUrl.pathname)).join(', ');
+  throw new Error(`Can't find meta/_journal.json file. Tried: ${tried}`);
+}
+
+async function loadMigrationJournal(location: MigrationLocation) {
+  const journalRaw = await Bun.file(location.journalUrl).text();
   const journal = JSON.parse(journalRaw) as {
     entries?: Array<{ tag: string; when: number }>;
   };
@@ -26,7 +52,7 @@ async function loadMigrationJournal() {
   }
 
   const latest = [...journal.entries].sort((a, b) => b.when - a.when)[0];
-  const sqlUrl = new URL(`./migrations/${latest.tag}.sql`, import.meta.url);
+  const sqlUrl = new URL(`${latest.tag}.sql`, location.baseUrl);
   const migrationSql = await Bun.file(sqlUrl).text();
   const hash = new Bun.CryptoHasher('sha256').update(migrationSql).digest('hex');
 
@@ -83,7 +109,7 @@ function printMigrationError(error: unknown) {
   if (err?.routine) console.error(`[db:migrate] routine: ${String(err.routine)}`);
 }
 
-async function baselineIfNeeded() {
+async function baselineIfNeeded(location: MigrationLocation) {
   const state = await getSchemaState();
   if (state.publicTableCount === 0 || state.migrationsRows > 0) {
     return false;
@@ -117,7 +143,7 @@ async function baselineIfNeeded() {
     );
   }
 
-  const { latestTag, latestMillis, latestHash } = await loadMigrationJournal();
+  const { latestTag, latestMillis, latestHash } = await loadMigrationJournal(location);
   console.warn(
     `[db:migrate] Detected schema-without-migration-history drift (public tables=${state.publicTableCount}, drizzle rows=0).`,
   );
@@ -147,17 +173,19 @@ async function baselineIfNeeded() {
 }
 
 async function main() {
+  const migrationLocation = await resolveMigrationLocation();
+
   try {
-    await runMigrations(db, { migrationsFolder: MIGRATIONS_DIR });
+    await runMigrations(db, { migrationsFolder: migrationLocation.dir });
     console.log('[db:migrate] Migrations applied successfully.');
   } catch (error) {
     printMigrationError(error);
-    const baselined = await baselineIfNeeded();
+    const baselined = await baselineIfNeeded(migrationLocation);
     if (!baselined) {
       throw error;
     }
 
-    await runMigrations(db, { migrationsFolder: MIGRATIONS_DIR });
+    await runMigrations(db, { migrationsFolder: migrationLocation.dir });
     console.log('[db:migrate] Migrations completed after baseline recovery.');
   } finally {
     await closeDbConnection(5);

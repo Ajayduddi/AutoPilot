@@ -149,8 +149,7 @@ services:
     depends_on:
       - db
     command: >
-      sh -c "bun /app/apps/backend/dist/db/migrate.js &&
-             bun /app/apps/backend/dist/index.js"
+      sh -c "cd /app/apps/backend && bun run db:migrate && bun /app/apps/backend/dist/index.js"
     ports:
       - "3000:3000"
     volumes:
