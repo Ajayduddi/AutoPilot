@@ -376,12 +376,16 @@ jobs:
         run: |
           set -euo pipefail
           # CI-only runtime values below are scoped to this local smoke test.
+          # Non-loopback placeholder URLs satisfy production URL validation;
+          # they are not contacted — only the backend health endpoint is exercised.
           docker run -d --name autopilot-ci \
             --add-host=host.docker.internal:host-gateway \
             -p 3000:3000 \
             -e DATABASE_URL=postgres://postgres:postgres@host.docker.internal:5432/chat_automation \
             -e AUTH_COOKIE_SECRET=test_secret_for_ci_only \
-            -e FRONTEND_ORIGIN=http://localhost:3000 \
+            -e FRONTEND_ORIGIN=https://ci-smoke.example.com \
+            -e CALLBACK_BASE_URL=https://ci-smoke-api.example.com \
+            -e OLLAMA_URL=https://ci-smoke-ollama.example.com \
             -e PROVIDER_API_KEY_ENCRYPTION_KEY=this_is_a_ci_only_encryption_key_32_chars_min \
             -e WEBHOOK_CALLBACK_SECRET=ci_webhook_secret \
             autopilot-ci:${{ github.sha }}
