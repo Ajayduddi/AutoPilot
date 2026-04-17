@@ -592,12 +592,18 @@ const DEFAULT_RUNTIME_CONFIG_FILE: RuntimeConfigFile = {
   MISTRAL_OCR_MODEL: "mistral-ocr-latest",
 };
 
+function buildInitialRuntimeConfigFile(): RuntimeConfigFile {
+  const initial = { ...DEFAULT_RUNTIME_CONFIG_FILE };
+  delete initial.OLLAMA_URL;
+  return initial;
+}
+
 function ensureRuntimeConfigFileExists(homeDir: string, configPath: string): void {
   const existing = readRuntimeConfigTextSync(configPath);
   if (existing !== null) return;
 
   ensureRuntimeConfigDirSync(homeDir);
-  writeRuntimeConfigTextSync(configPath, `${JSON.stringify(DEFAULT_RUNTIME_CONFIG_FILE, null, 2)}\n`);
+  writeRuntimeConfigTextSync(configPath, `${JSON.stringify(buildInitialRuntimeConfigFile(), null, 2)}\n`);
 }
 
 /**

@@ -51,6 +51,7 @@ describe("runtime.config strict validation", () => {
 
     const cfg = getRuntimeConfig();
     expect(cfg.defaultTimezone).toBe("UTC");
+    expect(cfg.ollamaUrl).toBe("http://localhost:11434");
 
     const configPath = `${home}/config.json`;
     expect(await Bun.file(configPath).exists()).toBe(true);
@@ -62,7 +63,7 @@ describe("runtime.config strict validation", () => {
     expect(persisted.CONTEXT_MODE_MAX_RETRIEVAL).toBe(5);
     expect(persisted.CALLBACK_BASE_URL).toBeUndefined();
     expect(persisted.FRONTEND_ORIGIN).toBeUndefined();
-    expect(persisted.OLLAMA_URL).toBe("http://localhost:11434");
+    expect(persisted.OLLAMA_URL).toBeUndefined();
     expect(persisted.GOOGLE_CLIENT_SECRET).toBeUndefined();
     expect(persisted.FEATURE_STRUCTURED_LOGGING).toBeUndefined();
   });
