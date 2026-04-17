@@ -114,7 +114,8 @@ export function SettingsSectionAccount(props: {
       });
       setQrCodeUrl(url);
     } catch (err) {
-      console.error("Failed to generate QR code", err);
+      // QR code generation failure handled silently; user sees empty QR code field
+      setQrCodeUrl("");
     }
   });
 
