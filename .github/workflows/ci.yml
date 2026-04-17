@@ -69,6 +69,9 @@ jobs:
       - name: Validate migration journal
         run: bun run ci:check-migration-journal
 
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
       - name: Enforce Bun-native runtime guardrail
         run: bun run ci:check-bun-native
 
@@ -118,7 +121,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:16
+        image: ankane/pgvector:latest
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -178,7 +181,7 @@ jobs:
     timeout-minutes: 25
     services:
       postgres:
-        image: postgres:16
+        image: ankane/pgvector:latest
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -235,7 +238,7 @@ jobs:
     timeout-minutes: 25
     services:
       postgres:
-        image: postgres:16
+        image: ankane/pgvector:latest
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -320,7 +323,7 @@ jobs:
     needs: [quality, backend-migration-preflight]
     services:
       postgres:
-        image: postgres:16
+        image: ankane/pgvector:latest
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
