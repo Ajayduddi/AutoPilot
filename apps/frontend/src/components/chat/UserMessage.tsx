@@ -1,3 +1,27 @@
+/**
+ * @fileoverview apps/frontend/src/components/chat/UserMessage.tsx
+ *
+ * High-level purpose:
+ * Reusable frontend presentation module for rendering chat, settings, and UI primitives across routes.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates reusable UI logic behind typed component contracts.
+ * - Supports composable view patterns with minimal route coupling.
+ * - Balances readability and flexibility for evolving product surfaces.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import the component into route or parent composition layers.
+ * 2. Pass required typed props and wire callbacks to domain actions.
+ * 3. Confirm visual and interaction behavior with component tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { Show, createSignal } from "solid-js";
 import type { ChatAttachmentDto } from "@autopilot/shared";
 
@@ -229,7 +253,9 @@ export function UserMessage(props: UserMessageProps) {
                       class="relative flex items-center gap-3 bg-[#1e1e1e] border border-neutral-700/50 rounded-xl p-2 pr-4 min-w-[180px] max-w-[240px] shadow-sm text-left"
                       title={[
                         att.extractionQuality ? `Extraction: ${att.extractionQuality}` : null,
-                        (att as any)?.structuredMetadata?.extractionSource ? `Source: ${(att as any).structuredMetadata.extractionSource}` : null,
+                        att.extractionSource ? `Source: ${att.extractionSource}` : null,
+                        att.extractionPath ? `Path: ${att.extractionPath}` : null,
+                        att.extractionModel ? `Model: ${att.extractionModel}` : null,
                         att.extractionStats?.pages != null ? `Pages: ${att.extractionStats.pages}` : null,
                         att.extractionStats?.sheets != null ? `Sheets: ${att.extractionStats.sheets}` : null,
                         att.extractionStats?.rowsTotal != null ? `Rows total: ${att.extractionStats.rowsTotal}` : null,

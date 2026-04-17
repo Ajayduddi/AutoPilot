@@ -1,3 +1,27 @@
+/**
+ * @fileoverview apps/frontend/e2e/workflows.spec.ts
+ *
+ * High-level purpose:
+ * Frontend end-to-end test module validating critical user journeys and UI behavior across environments.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Exercises real browser flows for high-value user scenarios.
+ * - Covers cross-feature integration behavior and regressions.
+ * - Provides confidence for release readiness of frontend changes.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Set up test fixtures and authenticated state prerequisites.
+ * 2. Execute scenario steps using stable selectors and assertions.
+ * 3. Run suite locally/CI and refine for deterministic outcomes.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { test, expect } from './helpers/test-fixtures';
 
 test.describe('Workflows Page — /workflows', () => {

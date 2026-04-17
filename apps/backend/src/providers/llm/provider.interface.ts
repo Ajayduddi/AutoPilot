@@ -1,5 +1,25 @@
 /**
- * ParsedIntent type alias.
+ * @fileoverview providers/llm/provider.interface.
+ *
+ * High-level purpose:
+ * Defines the canonical LLM provider contract used by routing/orchestrator
+ * services, ensuring all model vendors expose a unified intent + reply API.
+ * Business value: enables provider switching/fallback without rewriting core
+ * orchestration logic, reducing integration risk and vendor lock-in.
+ * System impact: this contract is the boundary between provider adapters and
+ * the rest of backend decision-making flow.
+ *
+ * Key Features (and trade-offs):
+ * - Strongly typed shared intent/reply interfaces.
+ * - Optional multimodal methods for image/audio/document analysis.
+ * - Trade-off: optional hooks require capability checks at call sites.
+ *
+ * Usage Guide:
+ * 1. Implement `ILLMProvider` in a new adapter file.
+ * 2. Ensure `parseIntent` returns stable JSON-compatible `ParsedIntent`.
+ * 3. Implement `generateReply` and optional streaming/multimodal hooks.
+ * 4. Register adapter creation in `llm.factory.ts`.
+ * 5. Validate behavior through orchestrator and fallback-chain tests.
  */
 export type ParsedIntent = {
     type: 'chat' | 'workflow';

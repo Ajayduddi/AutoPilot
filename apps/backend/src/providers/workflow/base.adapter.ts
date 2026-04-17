@@ -1,9 +1,33 @@
 /**
  * @fileoverview providers/workflow/base.adapter.
  *
- * External provider adapters and interfaces for LLMs and workflow engines.
+ * High-level purpose:
+ * Abstract base adapter that centralizes shared workflow-provider behaviors,
+ * validation scaffolding, and normalized operation-response construction.
+ * Business value: reduces duplication across provider adapters while keeping
+ * consistent error semantics for orchestration services.
+ * System impact: foundational class used by all concrete workflow adapters.
+ *
+ * Key Features (and trade-offs):
+ * - Common helpers for success/error operation result shaping.
+ * - Reusable validation utilities for IDs, config, and payload checks.
+ * - Standardized logging and provider identification semantics.
+ * - Extensibility points for provider-specific auth/config validation.
+ * - Trade-off: base abstraction can become broad if provider diversity expands
+ *   without disciplined adapter boundaries.
+ *
+ * Usage Guide:
+ * 1. Extend `BaseWorkflowAdapter` in concrete adapter implementation.
+ * 2. Implement required lifecycle methods for create/execute/list operations.
+ * 3. Reuse helper methods for consistent result/error payloads.
+ * 4. Keep provider-specific logic in subclass methods only.
+ * 5. Cover subclass behavior with adapter-level tests.
  */
-import type { Workflow, WorkflowExecutionRequest, WorkflowExecutionResult } from '@autopilot/shared';
+import type {
+  Workflow,
+  WorkflowExecutionRequest,
+  WorkflowExecutionResult,
+} from '@autopilot/shared';
 import type { WorkflowProviderAdapter } from './provider.interface';
 import type {
   NormalizedProviderResult,
@@ -12,6 +36,7 @@ import type {
   HealthCheckResult,
 } from './types';
 import { assertSafeOutboundUrl } from '../../util/network-safety';
+import { logger } from '../../util/logger';
 
 // ─────────────────────────────────────────────────────────────
 //  Base Webhook Adapter
@@ -111,18 +136,38 @@ export abstract class BaseWebhookAdapter implements Pick<
     for (let attempt = 0; attempt <= BaseWebhookAdapter.MAX_RETRIES; attempt++) {
       if (attempt > 0) {
                 const delay = BaseWebhookAdapter.RETRY_DELAYS[attempt - 1] ?? 4000;
-        console.log(`[WebhookAdapter] Retry ${attempt}/${BaseWebhookAdapter.MAX_RETRIES} after ${delay}ms...`);
+        logger.info({
+          scope: 'workflow.base-adapter',
+          message: 'Retrying workflow provider request',
+          attempt,
+          maxRetries: BaseWebhookAdapter.MAX_RETRIES,
+          delayMs: delay,
+          method: init.method,
+          url: safeUrl,
+        });
         await new Promise(r => setTimeout(r, delay));
       }
 
-      console.log(`[WebhookAdapter] ${init.method} → ${safeUrl}`);
+      logger.debug({
+        scope: 'workflow.base-adapter',
+        message: 'Dispatching workflow provider request',
+        method: init.method,
+        url: safeUrl,
+      });
             const response = await fetch(safeUrl, {
         ...init,
         signal: AbortSignal.timeout(timeoutMs),
       });
 
             const rawText = await response.text();
-      console.log(`[WebhookAdapter] Response: ${response.status} ${response.statusText}`);
+      logger.debug({
+        scope: 'workflow.base-adapter',
+        message: 'Received workflow provider response',
+        method: init.method,
+        url: safeUrl,
+        status: response.status,
+        statusText: response.statusText,
+      });
 
             let data: unknown;
       try {

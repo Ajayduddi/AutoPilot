@@ -1,11 +1,29 @@
 /**
  * @fileoverview middleware/webhook.middleware.
  *
- * Secret validation middleware for inbound webhook callbacks.
+ * High-level purpose:
+ * Cross-cutting HTTP middleware for security, validation, tracing, and request policy enforcement.
+ *
+ * Key Features (and trade-offs):
+ * - Composes request guards before handlers execute.
+ * - Standardizes auth, CSRF, headers, and error boundaries.
+ * - Provides reusable policy units across API routes.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Mount middleware in bootstrap with explicit ordering.
+ * 3. Keep middleware focused on request/response concerns.
+ * 4. Regression-test security-sensitive changes.
+ * 5. Keep documentation aligned with behavior and tests.
  */
-import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { WebhookSecretRepo } from '../repositories/webhook-secret.repo';
+import { logger } from '../util/logger';
+import { isLoopbackRequest } from '../util/request-ip';
+
+const encoder = new TextEncoder();
 
 /** Returns the first header value from single or multi-value header input. */
 function getHeaderValue(value: string | string[] | undefined): string | null {
@@ -16,10 +34,14 @@ function getHeaderValue(value: string | string[] | undefined): string | null {
 
 /** Performs timing-safe string equality checks for secret comparison. */
 function secureEqual(a: string, b: string): boolean {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
+  const left = encoder.encode(a);
+  const right = encoder.encode(b);
   if (left.length !== right.length) return false;
-  return crypto.timingSafeEqual(left, right);
+  let diff = 0;
+  for (let i = 0; i < left.length; i += 1) {
+    diff |= left[i] ^ right[i];
+  }
+  return diff === 0;
 }
 
 /** Detects missing-table errors for `webhook_secrets` during rollout/migrations. */
@@ -63,7 +85,10 @@ export const requireWebhookSecret = async (req: Request, res: Response, next: Ne
       } catch (err) {
         if (!isWebhookSecretsTableMissing(err)) throw err;
         dbSecretsReady = false;
-        console.warn('[SECURITY] webhook_secrets table not found. Falling back to env-based secret validation.');
+        logger.warn({
+          scope: 'webhook.middleware',
+          message: 'webhook_secrets table not found. Falling back to env-based secret validation.',
+        });
       }
 
       if (envSecret && secureEqual(providedSecret, envSecret)) {
@@ -80,7 +105,10 @@ export const requireWebhookSecret = async (req: Request, res: Response, next: Ne
       } catch (err) {
         if (!isWebhookSecretsTableMissing(err)) throw err;
         dbSecretsReady = false;
-        console.warn('[SECURITY] webhook_secrets table not found. Falling back to env-based secret validation.');
+        logger.warn({
+          scope: 'webhook.middleware',
+          message: 'webhook_secrets table not found. Falling back to env-based secret validation.',
+        });
       }
     }
 
@@ -97,10 +125,25 @@ export const requireWebhookSecret = async (req: Request, res: Response, next: Ne
       });
     }
 
+    if (!isLoopbackRequest(req)) {
+      return res.status(503).json({
+        error: {
+          message: 'Webhook security is not configured. Configure webhook secrets before accepting non-local callbacks.',
+          code: 'SERVICE_UNAVAILABLE',
+        },
+      });
+    }
+
     if (!dbSecretsReady) {
-      console.warn('[SECURITY] No webhook secret configured and webhook_secrets table is unavailable. Development fallback allows unsecured callbacks.');
+      logger.warn({
+        scope: 'webhook.middleware',
+        message: 'No webhook secret configured and webhook_secrets table is unavailable. Loopback-only development fallback allows unsecured callbacks.',
+      });
     } else {
-      console.warn('[SECURITY] No webhook secret configured. Development fallback allows unsecured callbacks.');
+      logger.warn({
+        scope: 'webhook.middleware',
+        message: 'No webhook secret configured. Loopback-only development fallback allows unsecured callbacks.',
+      });
     }
     return next();
   } catch (err) {

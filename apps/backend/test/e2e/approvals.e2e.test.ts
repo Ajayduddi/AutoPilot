@@ -1,8 +1,12 @@
+/**
+ * @fileoverview E2E coverage for approvals API routing, auth guards,
+ * and lifecycle transitions.
+ */
 import { afterEach, describe, expect, it } from "bun:test";
 import { approvalsRouter } from "../../src/routes/approvals.routes";
 import { buildApp, restoreMocks, withServer } from "./helpers/test-server";
 import { ApprovalRepo } from "../../src/repositories/approval.repo";
-import { WorkflowService } from "../../src/services/workflow.service";
+import { WorkflowService } from "../../src/services/workflow/workflow.service";
 
 afterEach(() => {
   restoreMocks();

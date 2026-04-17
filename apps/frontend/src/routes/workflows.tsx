@@ -1,3 +1,27 @@
+/**
+ * @fileoverview apps/frontend/src/routes/workflows.tsx
+ *
+ * High-level purpose:
+ * Frontend route module that composes page-level UI, data loading, and user flows for navigation states.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates route-scoped layout and state transitions.
+ * - Coordinates API interactions with route-specific rendering behavior.
+ * - Supports responsive UX patterns for authenticated and guest flows.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Create or update route component exports for target navigation path.
+ * 2. Connect route logic to frontend API helpers and shared context providers.
+ * 3. Validate route behavior on desktop and mobile with route/e2e tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { Title } from "@solidjs/meta";
 import { createResource, createSignal, For, Show, createMemo, onMount } from "solid-js";
 import { useNavigate } from "@solidjs/router";
@@ -7,6 +31,7 @@ import { CustomSelect } from "../components/ui/CustomSelect";
 import { WorkflowIcon } from "../components/ui/icons";
 import { useMobileMenu } from "../context/mobile-menu.context";
 import { workflowsApi } from "../lib/api";
+import { reportRuntimeError } from "../lib/runtime-reporter";
 import { authTypeOptions, httpMethodOptions, providerFilterOptions as providers, providerOptions, triggerMethodOptions, visibilityOptions } from "../lib/workflow-form-options";
 import { buildWorkflowAuthConfig, computeWorkflowStats, parseOptionalJson, type WorkflowCreateFormState } from "./workflows.helpers";
 const FilterIcon = (paths: string[]) => () => (
@@ -181,7 +206,7 @@ export default function Workflows() {
       await refetch();
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Unknown error";
-      console.error("Trigger failed:", message);
+      reportRuntimeError("Trigger failed:", message);
     } finally {
       setTriggering(null);
     }

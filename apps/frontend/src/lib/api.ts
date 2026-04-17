@@ -1,14 +1,44 @@
+/**
+ * @fileoverview apps/frontend/src/lib/api.ts
+ *
+ * High-level purpose:
+ * Frontend utility/integration module for API communication and shared client-side helper behavior.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Abstracts transport and formatting details from UI components.
+ * - Provides reusable helper contracts for request/response workflows.
+ * - Keeps client integration logic testable and centrally maintained.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import helper functions into components, routes, or contexts.
+ * 2. Compose utilities with domain-specific UI behavior in callers.
+ * 3. Update associated unit tests when changing helper contracts.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import type {
   AccountInfoDto,
+  ApiEnvelope,
   ApprovalDto,
   AuthStateDto,
   ChatAttachmentDto,
   ChatMessageDto,
   ChatThreadDto,
+  MfaStatusDto,
   NotificationDto,
   ProviderConfigDto,
   RuntimePreferencesDto,
+  RetrievalPreferencesDto,
+  ThreadMemoryInsightDto,
+  ThreadMemoryInsightsMetaDto,
   SafeUserDto,
+  TotpSetupDto,
   WorkflowDto,
   WorkflowRunDto,
   WebhookSecretDto,
@@ -18,6 +48,10 @@ import { API_BASE_URL } from "./api-base";
 // Central API client for the AutoPilot backend
 // Base URL: defaults to localhost in dev, can be overridden via VITE_API_URL
 const BASE_URL = API_BASE_URL;
+const MODEL_DISCOVERY_CACHE_TTL_MS = 30_000;
+const MODEL_DISCOVERY_CACHE_MAX_ENTRIES = 64;
+const modelListCache = new Map<string, { expiresAt: number; value: string[] }>();
+const providerCapabilitiesCache = new Map<string, { expiresAt: number; value: ProviderModelCapabilities }>();
 
 async function readJsonSafe(res: Response): Promise<any | null> {
   try {
@@ -25,6 +59,25 @@ async function readJsonSafe(res: Response): Promise<any | null> {
   } catch {
     return null;
   }
+}
+
+/** Default timeout for non-streaming API requests (30 seconds). */
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Sanitizes API error messages to prevent leaking backend internals to users.
+ *
+ * @param raw - Raw error string from API response or thrown error.
+ * @returns Sanitized error message safe for user display.
+ */
+function sanitizeApiError(raw: string): string {
+  if (!raw) return "An unexpected error occurred.";
+  // Strip stack traces (e.g. "at Module._compile (/app/src/...")
+  if (/\bat\s+\S+\s*\(/.test(raw)) return "An unexpected error occurred.";
+  // Strip messages that look like file paths or internal errors
+  if (/\/[a-z_-]+\.[a-z]+:/i.test(raw) && raw.length > 120) return "An unexpected error occurred.";
+  // Truncate overly long messages
+  return raw.length > 300 ? raw.slice(0, 300) + "…" : raw;
 }
 
 /**
@@ -68,34 +121,111 @@ function getCsrfToken(): string | undefined {
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const timezone = getBrowserTimezone();
   const csrfToken = getCsrfToken();
-  const res = await fetch(`${BASE_URL}${path}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(timezone ? { "x-user-timezone": timezone } : {}),
-      ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
-      ...options?.headers,
-    },
-    ...options,
-  });
-  const contentType = res.headers.get("content-type") || "";
-  const isJson = contentType.includes("application/json");
-  if (!res.ok) {
-    const body = isJson ? await readJsonSafe(res) : null;
-    const errorMessage =
-      body?.error?.message ||
-      body?.error ||
-      `HTTP ${res.status}`;
-    throw new Error(errorMessage);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      credentials: "include",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(timezone ? { "x-user-timezone": timezone } : {}),
+        ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
+        ...options?.headers,
+      },
+      ...options,
+    });
+    const contentType = res.headers.get("content-type") || "";
+    const isJson = contentType.includes("application/json");
+    if (!res.ok) {
+      const body = isJson ? await readJsonSafe(res) : null;
+      const errorMessage =
+        body?.error?.message ||
+        body?.error ||
+        `HTTP ${res.status}`;
+      throw new Error(sanitizeApiError(errorMessage));
+    }
+    if (!isJson) {
+      throw new Error(`Expected JSON response, got ${contentType || "unknown content-type"}`);
+    }
+    const json = await readJsonSafe(res);
+    if (!json) {
+      throw new Error("Failed to parse JSON response");
+    }
+    return json.data ?? json;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  if (!isJson) {
-    throw new Error(`Expected JSON response, got ${contentType || "unknown content-type"}`);
+}
+
+async function requestRaw<T>(path: string, options?: RequestInit): Promise<ApiEnvelope<T>> {
+  const timezone = getBrowserTimezone();
+  const csrfToken = getCsrfToken();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      credentials: "include",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(timezone ? { "x-user-timezone": timezone } : {}),
+        ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
+        ...options?.headers,
+      },
+      ...options,
+    });
+    const contentType = res.headers.get("content-type") || "";
+    const isJson = contentType.includes("application/json");
+    if (!res.ok) {
+      const body = isJson ? await readJsonSafe(res) : null;
+      const errorMessage = body?.error?.message || body?.error || `HTTP ${res.status}`;
+      throw new Error(sanitizeApiError(errorMessage));
+    }
+    if (!isJson) {
+      throw new Error(`Expected JSON response, got ${contentType || "unknown content-type"}`);
+    }
+    const json = await readJsonSafe(res);
+    if (!json) {
+      throw new Error("Failed to parse JSON response");
+    }
+    return json as ApiEnvelope<T>;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  const json = await readJsonSafe(res);
-  if (!json) {
-    throw new Error("Failed to parse JSON response");
+}
+
+function cacheKey(prefix: string, payload: unknown) {
+  return `${prefix}:${JSON.stringify(payload)}`;
+}
+
+function pruneTimedCache<T extends { expiresAt: number }>(cache: Map<string, T>, maxEntries: number, now = Date.now()) {
+  for (const [key, entry] of cache.entries()) {
+    if (entry.expiresAt <= now) {
+      cache.delete(key);
+    }
   }
-  return json.data ?? json;
+  if (cache.size <= maxEntries) return;
+  const entries = [...cache.entries()].sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+  const excess = entries.length - maxEntries;
+  for (const [key] of entries.slice(0, excess)) {
+    cache.delete(key);
+  }
+}
+
+function clearProviderDiscoveryCaches() {
+  modelListCache.clear();
+  providerCapabilitiesCache.clear();
 }
 
 // ─── SSE stream parser ────────────────────────────────────────────────────────
@@ -161,6 +291,38 @@ export const chatApi = {
     if (params?.limit) qs.set("limit", String(params.limit));
     if (params?.before) qs.set("before", params.before);
     return request<ChatMessageDto[]>(`/api/chat/threads/${threadId}/messages${qs.toString() ? `?${qs.toString()}` : ""}`);
+  },
+  getThreadMemoryInsights: (
+    threadId: string,
+    params?: {
+      limit?: number;
+      category?: ThreadMemoryInsightDto["category"] | "all";
+      groupBy?: "none" | "category";
+    },
+  ) => {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (params?.category && params.category !== "all") qs.set("category", params.category);
+    if (params?.groupBy && params.groupBy !== "none") qs.set("groupBy", params.groupBy);
+    return request<ThreadMemoryInsightDto[]>(`/api/chat/threads/${threadId}/memory-insights${qs.toString() ? `?${qs.toString()}` : ""}`);
+  },
+  getThreadMemoryInsightsEnvelope: async (
+    threadId: string,
+    params?: {
+      limit?: number;
+      category?: ThreadMemoryInsightDto["category"] | "all";
+      groupBy?: "none" | "category";
+    },
+  ): Promise<{ data: ThreadMemoryInsightDto[]; meta?: ThreadMemoryInsightsMetaDto }> => {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (params?.category && params.category !== "all") qs.set("category", params.category);
+    if (params?.groupBy && params.groupBy !== "none") qs.set("groupBy", params.groupBy);
+    const envelope = await requestRaw<ThreadMemoryInsightDto[]>(`/api/chat/threads/${threadId}/memory-insights${qs.toString() ? `?${qs.toString()}` : ""}`);
+    return {
+      data: Array.isArray(envelope.data) ? envelope.data : [],
+      meta: envelope.meta as ThreadMemoryInsightsMetaDto | undefined,
+    };
   },
   uploadAttachments: async (threadId: string, files: File[], providerId?: string, model?: string) => {
     const form = new FormData();
@@ -316,6 +478,50 @@ export const workflowsApi = {
     }),
 };
 
+// ─── Recommendations ────────────────────────────────────────────────────────
+export const recommendationsApi = {
+  getSimilarWorkflows: (workflowId: string, params?: { limit?: number; minScore?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (typeof params?.minScore === "number") qs.set("minScore", String(params.minScore));
+    return request<Array<{
+      workflowId: string;
+      key: string;
+      name: string;
+      description?: string | null;
+      provider: string;
+      similarity: number;
+    }>>(`/api/recommendations/workflows/${workflowId}${qs.toString() ? `?${qs.toString()}` : ""}`);
+  },
+  getRelatedRuns: (runId: string, params?: { limit?: number; minScore?: number; onlyFailures?: boolean }) => {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (typeof params?.minScore === "number") qs.set("minScore", String(params.minScore));
+    if (typeof params?.onlyFailures === "boolean") qs.set("onlyFailures", String(params.onlyFailures));
+    return request<Array<{
+      runId: string;
+      workflowId: string;
+      workflowKey: string;
+      status: string;
+      startedAt: string;
+      similarity: number;
+    }>>(`/api/recommendations/runs/${runId}${qs.toString() ? `?${qs.toString()}` : ""}`);
+  },
+  getRelatedDocumentChunks: (attachmentId: string, params?: { limit?: number; minScore?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (typeof params?.minScore === "number") qs.set("minScore", String(params.minScore));
+    return request<Array<{
+      chunkId: string;
+      attachmentId: string;
+      filename: string;
+      chunkIndex: number;
+      content: string;
+      similarity: number;
+    }>>(`/api/recommendations/documents/${attachmentId}${qs.toString() ? `?${qs.toString()}` : ""}`);
+  },
+};
+
 // ─── Approvals ───────────────────────────────────────────────────────────────
 export const approvalsApi = {
   getPending: () => request<ApprovalDto[]>("/api/approvals"),
@@ -369,10 +575,30 @@ export type AuthStatePayload = AuthStateDto;
   * account info type alias.
   */
 export type AccountInfo = AccountInfoDto;
+export type MfaStatus = MfaStatusDto;
+export type TotpSetup = TotpSetupDto;
 /**
   * runtime preferences type alias.
   */
 export type RuntimePreferences = RuntimePreferencesDto;
+export type RetrievalPreferences = RetrievalPreferencesDto;
+export type ProviderModelCapabilities = Array<{
+  providerConfigId: string;
+  provider: string;
+  connectionName: string;
+  isDefault: boolean;
+  configuredModel: string | null;
+  status: "ok" | "error";
+  error?: string;
+  models: Array<{
+    id: string;
+    name: string;
+    provider: string;
+    contextWindow: number | null;
+    outputTokenLimit?: number | null;
+    raw?: Record<string, unknown>;
+  }>;
+}>;
 export const authApi = {
   getState: () => request<AuthStatePayload>("/api/auth/state"),
   getMe: () => request<{ user: SafeUserDto }>("/api/auth/me"),
@@ -383,7 +609,12 @@ export const authApi = {
       body: JSON.stringify(payload),
     }),
   login: (payload: { email: string; password: string }) =>
-    request<{ user: SafeUserDto }>("/api/auth/login", {
+    requestRaw<{ user?: SafeUserDto; mfaRequired?: boolean; method?: "totp" }>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  verifyTotp: (payload: { code: string }) =>
+    request<{ user: SafeUserDto }>("/api/auth/mfa/totp/verify", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
@@ -402,6 +633,22 @@ export const authApi = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  getMfaStatus: () => request<MfaStatus>("/api/auth/account/mfa"),
+  beginTotpSetup: () =>
+    request<TotpSetup>("/api/auth/account/mfa/totp/setup", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  enableTotp: (payload: { code: string }) =>
+    request<MfaStatus>("/api/auth/account/mfa/totp/enable", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  disableTotp: (payload: { code: string; currentPassword?: string }) =>
+    request<MfaStatus>("/api/auth/account/mfa/totp/disable", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   logout: () => request<{ loggedOut: boolean }>("/api/auth/logout", { method: "POST" }),
   googleStartUrl: () => `${BASE_URL}/api/auth/google/start`,
 };
@@ -415,25 +662,77 @@ export const settingsApi = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  getRetrievalPreferences: () => request<RetrievalPreferencesDto>("/api/settings/retrieval-preferences"),
+  updateRetrievalPreferences: (payload: Partial<RetrievalPreferencesDto>) =>
+    request<RetrievalPreferencesDto>("/api/settings/retrieval-preferences", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  getProviderModelCapabilities: (options?: { embeddingOnly?: boolean }) => {
+    const qs = new URLSearchParams();
+    if (options?.embeddingOnly) qs.set("embeddingOnly", "true");
+    const key = cacheKey("provider-capabilities", { embeddingOnly: Boolean(options?.embeddingOnly) });
+    pruneTimedCache(providerCapabilitiesCache, MODEL_DISCOVERY_CACHE_MAX_ENTRIES);
+    const cached = providerCapabilitiesCache.get(key);
+    const now = Date.now();
+    if (cached && cached.expiresAt > now) {
+      return Promise.resolve(cached.value);
+    }
+    return request<ProviderModelCapabilities>(`/api/settings/providers/model-capabilities${qs.toString() ? `?${qs.toString()}` : ""}`)
+      .then((value) => {
+        providerCapabilitiesCache.set(key, { expiresAt: now + MODEL_DISCOVERY_CACHE_TTL_MS, value });
+        pruneTimedCache(providerCapabilitiesCache, MODEL_DISCOVERY_CACHE_MAX_ENTRIES, now);
+        return value;
+      });
+  },
   saveProviderConfig: (payload: { provider: string; model: string; apiKey?: string; baseUrl?: string; customName?: string }) =>
     request<ProviderConfigDto>("/api/settings/providers", {
       method: "POST",
       body: JSON.stringify(payload),
+    }).then((value) => {
+      clearProviderDiscoveryCaches();
+      return value;
     }),
   deleteProvider: (id: string) =>
-    request<ProviderConfigDto>(`/api/settings/providers/${id}`, { method: "DELETE" }),
+    request<ProviderConfigDto>(`/api/settings/providers/${id}`, { method: "DELETE" }).then((value) => {
+      clearProviderDiscoveryCaches();
+      return value;
+    }),
   setActiveProvider: (id: string) =>
-    request<ProviderConfigDto>(`/api/settings/providers/${id}/active`, { method: "POST" }),
+    request<ProviderConfigDto>(`/api/settings/providers/${id}/active`, { method: "POST" }).then((value) => {
+      clearProviderDiscoveryCaches();
+      return value;
+    }),
   updateProviderModel: (id: string, model: string) =>
     request<ProviderConfigDto>(`/api/settings/providers/${id}/model`, {
       method: "PATCH",
       body: JSON.stringify({ model }),
+    }).then((value) => {
+      clearProviderDiscoveryCaches();
+      return value;
     }),
-  fetchModels: (payload: { provider: string; providerId?: string; baseUrl?: string; apiKey?: string }) =>
-    request<string[]>("/api/settings/fetch-models", {
+  fetchModels: (payload: { provider: string; providerId?: string; baseUrl?: string }) => {
+    const normalizedPayload = {
+      provider: payload.provider,
+      providerId: payload.providerId || "",
+      baseUrl: payload.baseUrl || "",
+    };
+    const key = cacheKey("fetch-models", normalizedPayload);
+    pruneTimedCache(modelListCache, MODEL_DISCOVERY_CACHE_MAX_ENTRIES);
+    const cached = modelListCache.get(key);
+    const now = Date.now();
+    if (cached && cached.expiresAt > now) {
+      return Promise.resolve(cached.value);
+    }
+    return request<string[]>("/api/settings/fetch-models", {
       method: "POST",
       body: JSON.stringify(payload),
-    }),
+    }).then((value) => {
+      modelListCache.set(key, { expiresAt: now + MODEL_DISCOVERY_CACHE_TTL_MS, value });
+      pruneTimedCache(modelListCache, MODEL_DISCOVERY_CACHE_MAX_ENTRIES, now);
+      return value;
+    });
+  },
   getWebhookSecrets: () => request<WebhookSecretDto[]>("/api/settings/webhook-secrets"),
   createWebhookSecret: (payload?: { label?: string }) =>
     request<WebhookSecretDto>("/api/settings/webhook-secrets", {

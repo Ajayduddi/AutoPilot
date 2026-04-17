@@ -1,7 +1,27 @@
 /**
  * @fileoverview providers/llm/gemini.provider.
  *
- * External provider adapters and interfaces for LLMs and workflow engines.
+ * High-level purpose:
+ * Gemini adapter that uses OpenAI-compatible endpoints for consistent calling
+ * conventions across provider implementations.
+ * Business value: allows Gemini adoption without changing service-level call
+ * contracts used by orchestration and extraction layers.
+ * System impact: extends provider diversity and resilience in AI routing.
+ *
+ * Key Features (and trade-offs):
+ * - OpenAI SDK compatibility mode for Gemini endpoint interaction.
+ * - Text and strict JSON-schema response generation paths.
+ * - Usage normalization into shared completion-token accounting.
+ * - Optional image content support in prompt messages.
+ * - Trade-off: compatibility layer may expose subtle provider-specific edge
+ *   cases that require adapter-level normalization.
+ *
+ * Usage Guide:
+ * 1. Instantiate with `apiKey`, `model`, and optional `baseURL`.
+ * 2. Use `generateResponse` for free-form completion tasks.
+ * 3. Use `generateStructuredResponse` for schema-bound automation output.
+ * 4. Keep prompt + schema concise to reduce malformed JSON risk.
+ * 5. Validate outputs in higher-level services before persistence/execution.
  */
 import {
   ILLMProvider,
@@ -13,6 +33,7 @@ import {
   LlmResponseMode,
 } from './provider.interface';
 import { logger } from '../../util/logger';
+import { bytesToBase64 } from '../../util/byte-utils';
 
 /**
  * Gemini-backed implementation of the platform LLM provider contract.
@@ -54,7 +75,7 @@ export class GeminiProvider implements ILLMProvider {
   }
 
     private toBase64(bytes: Uint8Array): string {
-    return Buffer.from(bytes).toString('base64');
+    return bytesToBase64(bytes);
   }
 
   private safeJsonParse<T>(text: string): T | null {

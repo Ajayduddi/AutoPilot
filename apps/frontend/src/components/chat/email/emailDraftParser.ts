@@ -1,4 +1,28 @@
 /**
+ * @fileoverview apps/frontend/src/components/chat/email/emailDraftParser.ts
+ *
+ * High-level purpose:
+ * Reusable frontend presentation module for rendering chat, settings, and UI primitives across routes.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates reusable UI logic behind typed component contracts.
+ * - Supports composable view patterns with minimal route coupling.
+ * - Balances readability and flexibility for evolving product surfaces.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import the component into route or parent composition layers.
+ * 2. Pass required typed props and wire callbacks to domain actions.
+ * 3. Confirm visual and interaction behavior with component tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
+/**
   * email section type alias.
   */
 type EmailSection =
@@ -231,21 +255,6 @@ function isLikelyVariantHeaderLine(line: string): boolean {
   return score >= 5;
 }
 
-/**
- * Parses raw email draft payload input into structured subject and body fields.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @param input - Input value for parseEmailDraftPayload.
- * @returns Return value from parseEmailDraftPayload.
- *
- * @example
- * ```typescript
- * const output = parseEmailDraftPayload(value);
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
- */
 function parseEmailDraftPayload(input: Partial<EmailDraftPayload>): EmailDraftPayload {
   const subject = String(input.subject || "").trim();
   const body = normalizeEmailText(String(input.body || ""));
@@ -258,21 +267,6 @@ function parseEmailDraftPayload(input: Partial<EmailDraftPayload>): EmailDraftPa
   return { subject, body, intro, outro, signature, separatorBefore };
 }
 
-/**
- * Extracts a trailing variant header from parsed email draft lines.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @param lines - Input value for extractTrailingVariantHeader.
- * @returns Return value from extractTrailingVariantHeader.
- *
- * @example
- * ```typescript
- * const output = extractTrailingVariantHeader(value);
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
- */
 function extractTrailingVariantHeader(lines: string[]): { bodyLines: string[]; separator?: string } {
   const clone = [...lines];
   let end = clone.length - 1;
@@ -290,21 +284,6 @@ function extractTrailingVariantHeader(lines: string[]): { bodyLines: string[]; s
   };
 }
 
-/**
- * Splits normalized email text into body and outro segments.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @param raw - Input value for splitEmailBodyAndOutro.
- * @returns Return value from splitEmailBodyAndOutro.
- *
- * @example
- * ```typescript
- * const output = splitEmailBodyAndOutro(value);
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
- */
 function splitEmailBodyAndOutro(raw: string): { body: string; outro: string } {
   const lines = normalizeEmailText(raw)
     .split("\n")

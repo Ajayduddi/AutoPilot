@@ -1,9 +1,29 @@
 /**
  * @fileoverview providers/workflow/make.adapter.
  *
- * External provider adapters and interfaces for LLMs and workflow engines.
+ * High-level purpose:
+ * Make.com adapter that maps shared workflow operations to Make scenarios and
+ * execution endpoints.
+ * Business value: supports no-code automation use cases on Make while keeping
+ * orchestration logic provider-agnostic.
+ * System impact: alternative workflow backend path in multi-provider setups.
+ *
+ * Key Features (and trade-offs):
+ * - API-token-based request execution against Make endpoints.
+ * - Scenario-oriented create/execute/list operation support.
+ * - Shared contract result normalization with operation metadata.
+ * - Provider-specific response parsing for execution-state reporting.
+ * - Trade-off: feature parity depends on Make API capabilities and account
+ *   plan constraints.
+ *
+ * Usage Guide:
+ * 1. Configure Make API base URL and token in provider settings.
+ * 2. Instantiate via workflow factory using provider type `make`.
+ * 3. Execute standardized workflow operations through adapter methods.
+ * 4. Inspect returned metadata for scenario and run identifiers.
+ * 5. Backstop with integration tests for endpoint behavior drift.
  */
-import type {
+import {
   Workflow,
   WorkflowExecutionRequest,
   WorkflowExecutionResult,

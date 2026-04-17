@@ -43,6 +43,20 @@
       "when": 1775464200000,
       "tag": "0005_provider_custom_name",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1775520000000,
+      "tag": "0006_embeddings_pgvector",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1776124800000,
+      "tag": "0007_totp_mfa_and_session_hardening",
+      "breakpoints": true
     }
   ]
 }

@@ -1,15 +1,55 @@
 /**
  * @fileoverview config/runtime.config.
  *
- * Runtime configuration loading, validation, and feature/runtime tuning controls.
+ * High-level purpose:
+ * Runtime configuration contracts, loading, and normalization for backend execution.
+ *
+ * Key Features (and trade-offs):
+ * - Validates and shapes environment/runtime config values.
+ * - Provides typed accessors for production-safe settings.
+ * - Supports deterministic configuration behavior across environments.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Add new settings in centralized config contracts.
+ * 3. Avoid scattering env access outside config modules.
+ * 4. Typecheck and config tests should validate changes.
+ * 5. Keep documentation aligned with behavior and tests.
  */
-import fs from "fs";
-import os from "os";
-import path from "path";
 import type { MCPClientOptions } from "@mastra/mcp";
 import { z } from "zod";
+import {
+  ensureRuntimeConfigDirSync,
+  primeRuntimeConfigText,
+  readRuntimeConfigTextSync,
+  resetRuntimeConfigIoCache,
+  writeRuntimeConfigTextSync,
+} from "./runtime-config-io";
+import {
+  type RuntimeValidationIssue,
+  getHomeDirectory,
+  joinPath,
+  normalizeMcpServers,
+  parseNumberMap,
+  parseString,
+  parseStringList,
+  resolvePath,
+  validateRuntimeRawInputs,
+} from "./runtime-config-utils";
+import {
+  buildUpdatedRuntimeConfigFile,
+  persistRuntimeConfigFile,
+  persistRuntimeConfigFileAsync,
+  type RuntimeConfigUpdates,
+} from "./runtime-config-persistence";
+import {
+  buildRuntimeConfig,
+  buildRuntimeValidationInputs,
+} from "./runtime-config-assembly";
 
-type RuntimeConfigFile = {
+export type RuntimeConfigFile = {
   forceInteractiveQuestions?: boolean;
   uploadDir?: string;
   approvalMode?: RuntimeApprovalMode;
@@ -40,6 +80,9 @@ type RuntimeConfigFile = {
   MAX_FILES_PER_MESSAGE?: number | string;
   ALLOWED_MIME_TYPES?: string[] | string;
   ATTACHMENT_PROCESS_TIMEOUT_MS?: number | string;
+  XLSX_MAX_COLS?: number | string;
+  XLSX_MAX_ROWS_RENDER_PER_SHEET?: number | string;
+  XLSX_MAX_ROWS_PARSE_PER_SHEET?: number | string;
   AGENT_RUNTIME_MAX_STEPS?: number | string;
   MASTRA_AGENT_MODEL?: string;
   AGENT_MCP_ENABLED?: boolean | string;
@@ -48,20 +91,64 @@ type RuntimeConfigFile = {
   LLM_PARSE_INTENT_TIMEOUT_MS?: number | string;
   LLM_GENERATE_REPLY_TIMEOUT_MS?: number | string;
   LLM_STREAM_STALL_TIMEOUT_MS?: number | string;
+  WORKFLOW_CONTEXT_CACHE_TTL_MS?: number | string;
+  LLM_INTENT_WORKFLOW_SHORTLIST?: number | string;
+  LLM_REPLY_WORKFLOW_SHORTLIST?: number | string;
   AUTO_ROUTER_DISCOVERY_BREAKER_FAILURES?: number | string;
   AUTO_ROUTER_DISCOVERY_BREAKER_COOLDOWN_MS?: number | string;
+  AUTO_ROUTER_DISCOVERY_TTL_MS?: number | string;
+  AUTO_ROUTER_DISCOVERY_TIMEOUT_MS?: number | string;
+  AUTO_ROUTER_MAX_MODELS_PER_PROVIDER?: number | string;
+  AUTO_ROUTER_MAX_CANDIDATES?: number | string;
+  AUTO_ROUTER_PREFERRED_REASONING_MODELS?: string[] | string;
   ATTACHMENT_SCAN_MODE?: "off" | "clamav" | "http" | string;
   ATTACHMENT_SCAN_FAIL_CLOSED?: boolean | string;
   ATTACHMENT_SCAN_TIMEOUT_MS?: number | string;
+  ATTACHMENT_SCAN_HTTP_URL?: string;
+  ATTACHMENT_SCAN_HTTP_TOKEN?: string;
+  CLAMAV_HOST?: string;
+  CLAMAV_PORT?: number | string;
+  CALLBACK_BASE_URL?: string;
+  FRONTEND_ORIGIN?: string;
+  SESSION_TTL_DAYS?: number | string;
+  AUTH_REVOKE_OTHER_SESSIONS_ON_PASSWORD_CHANGE?: boolean | string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GOOGLE_REDIRECT_URI?: string;
+  PROVIDER_API_KEY_ENCRYPTION_KEY?: string;
   METRICS_PUSHGATEWAY_URL?: string;
   METRICS_JOB_NAME?: string;
   METRICS_INSTANCE_ID?: string;
   METRICS_PUSH_INTERVAL_MS?: number | string;
   METRICS_PUSH_TIMEOUT_MS?: number | string;
+  METRICS_SNAPSHOT_ENABLED?: boolean | string;
   METRICS_SNAPSHOT_PATH?: string;
-  FEATURE_TYPED_CONTRACTS?: boolean | string;
+  METRICS_ALLOW_PUBLIC?: boolean | string;
+  METRICS_AUTH_TOKEN?: string;
   FEATURE_STRUCTURED_LOGGING?: boolean | string;
   FEATURE_CROSS_ORIGIN_ISOLATION?: boolean | string;
+  EMBEDDING_PROVIDER?: string;
+  EMBEDDING_API_KEY?: string;
+  EMBEDDING_API_PROVIDER?: string;
+  EMBEDDING_API_PROVIDER_ID?: string;
+  EMBEDDINGS_ENABLED?: boolean | string;
+  EMBEDDINGS_DEBUG?: boolean | string;
+  EMBEDDINGS_INDEX_BATCH_SIZE?: number | string;
+  EMBEDDINGS_RETRY_MAX_ATTEMPTS?: number | string;
+  EMBEDDINGS_RETRY_BASE_DELAY_MS?: number | string;
+  EMBEDDING_VECTOR_DIMENSIONS?: number | string;
+  EMBEDDING_MODEL?: string;
+  EMBEDDING_MAX_BATCH_SIZE?: number | string;
+  EMBEDDING_CACHE_DIR?: string;
+  EMBEDDING_ALLOW_REMOTE_MODELS?: boolean | string;
+  EMBEDDING_QUANTIZED?: boolean | string;
+  SEMANTIC_SEARCH_TOP_K_DEFAULT?: number | string;
+  SEMANTIC_SEARCH_MIN_SCORE?: number | string;
+  RAG_MAX_CHUNKS?: number | string;
+  RAG_CHUNK_TOKEN_BUDGET?: number | string;
+  MISTRAL_API_KEY?: string;
+  MISTRAL_OCR_BASE_URL?: string;
+  MISTRAL_OCR_MODEL?: string;
 };
 
 /**
@@ -80,105 +167,152 @@ export type RuntimeApprovalMode = "default" | "auto";
  * variables, followed by strict schema validation.
  */
 export type RuntimeConfig = {
-    homeDir: string;
-    configPath: string;
-    forceInteractiveQuestions: boolean;
-    uploadDir: string;
-    approvalMode: RuntimeApprovalMode;
-    defaultTimezone: string;
+  homeDir: string;
+  configPath: string;
+  forceInteractiveQuestions: boolean;
+  uploadDir: string;
+  approvalMode: RuntimeApprovalMode;
+  defaultTimezone: string;
   modelFetch: {
-        allowPrivate: boolean;
-        timeoutMs: number;
-        maxBytes: number;
+    allowPrivate: boolean;
+    timeoutMs: number;
+    maxBytes: number;
   };
-    ollamaUrl: string;
+  ollamaUrl: string;
   contextMode: {
-        enabled: boolean;
-        debug: boolean;
-        maxRetrieval: number;
-        modelMaxRetrieval: Record<string, number>;
-        contentMaxLength: number;
-        summaryMaxLength: number;
-        targetWindowTokens: number;
-        historyBudgetTokens: number;
-        retrievedContextBudgetTokens: number;
-        maxMessageTokens: number;
-        maxContextItemTokens: number;
-        cacheDataBudgetTokens: number;
+    enabled: boolean;
+    debug: boolean;
+    maxRetrieval: number;
+    modelMaxRetrieval: Record<string, number>;
+    contentMaxLength: number;
+    summaryMaxLength: number;
+    targetWindowTokens: number;
+    historyBudgetTokens: number;
+    retrievedContextBudgetTokens: number;
+    maxMessageTokens: number;
+    maxContextItemTokens: number;
+    cacheDataBudgetTokens: number;
     index: {
-            workflowRuns: boolean;
-            decisions: boolean;
-            threadState: boolean;
+      workflowRuns: boolean;
+      decisions: boolean;
+      threadState: boolean;
     };
-        ttlDays: number;
+    ttlDays: number;
     cache: {
-            enabled: boolean;
-            staleMins: number;
+      enabled: boolean;
+      staleMins: number;
     };
   };
   attachments: {
-        maxUploadMb: number;
-        maxFilesPerMessage: number;
-        allowedMimeTypes: string[];
-        processTimeoutMs: number;
+    maxUploadMb: number;
+    maxFilesPerMessage: number;
+    allowedMimeTypes: string[];
+    processTimeoutMs: number;
+  };
+  extraction: {
+    xlsxMaxCols: number;
+    xlsxMaxRowsRenderPerSheet: number;
+    xlsxMaxRowsParsePerSheet: number;
   };
   agentRuntime: {
-        maxSteps: number;
-        mastraAgentModel: string;
+    maxSteps: number;
+    mastraAgentModel: string;
     mcp: {
-            enabled: boolean;
-            servers: MCPClientOptions["servers"];
-            timeoutMs: number;
+      enabled: boolean;
+      servers: MCPClientOptions["servers"];
+      timeoutMs: number;
     };
   };
   llm: {
-        parseIntentTimeoutMs: number;
-        generateReplyTimeoutMs: number;
-        streamStallTimeoutMs: number;
+    parseIntentTimeoutMs: number;
+    generateReplyTimeoutMs: number;
+    streamStallTimeoutMs: number;
+    workflowContextCacheTtlMs: number;
+    intentWorkflowShortlist: number;
+    replyWorkflowShortlist: number;
   };
   autoRouter: {
-        discoveryBreakerFailures: number;
-        discoveryBreakerCooldownMs: number;
+    discoveryBreakerFailures: number;
+    discoveryBreakerCooldownMs: number;
+    discoveryTtlMs: number;
+    discoveryTimeoutMs: number;
+    maxModelsPerProvider: number;
+    maxCandidates: number;
+    preferredReasoningModels: string[];
   };
   attachmentScan: {
-        mode: "off" | "clamav" | "http";
-        failClosed: boolean;
-        timeoutMs: number;
+    mode: "off" | "clamav" | "http";
+    failClosed: boolean;
+    timeoutMs: number;
+    httpUrl: string;
+    httpToken: string;
+    clamavHost: string;
+    clamavPort: number;
+  };
+  callbackBaseUrl: string;
+  auth: {
+    frontendOrigin: string;
+    sessionTtlDays: number;
+    revokeOtherSessionsOnPasswordChange: boolean;
+    google: {
+      clientId: string;
+      clientSecret: string;
+      redirectUri: string;
+    };
   };
   metricsExporter: {
-        pushgatewayUrl: string;
-        jobName: string;
-        instanceId: string;
-        pushIntervalMs: number;
-        pushTimeoutMs: number;
-        snapshotPath: string;
+    pushgatewayUrl: string;
+    jobName: string;
+    instanceId: string;
+    pushIntervalMs: number;
+    pushTimeoutMs: number;
+    snapshotEnabled: boolean;
+    snapshotPath: string;
+    allowPublic: boolean;
+    authToken: string;
+  };
+  push: {
+    vapidPublicKey: string;
+    vapidPrivateKey: string;
+    vapidSubject: string;
   };
   features: {
-        typedContracts: boolean;
-        structuredLogging: boolean;
-        crossOriginIsolation: boolean;
+    typedContracts: boolean;
+    structuredLogging: boolean;
+    crossOriginIsolation: boolean;
+  };
+  retrievalEmbedding: {
+    embeddingProvider: "api" | "bge_local" | "minilm_local";
+    embeddingApiKey: string;
+    embeddingApiProvider: string;
+    embeddingApiProviderId: string;
+    embeddingsEnabled: boolean;
+    embeddingsDebug: boolean;
+    embeddingsIndexBatchSize: number;
+    embeddingsRetryMaxAttempts: number;
+    embeddingsRetryBaseDelayMs: number;
+    embeddingVectorDimensions: number;
+    embeddingModel: string;
+    embeddingMaxBatchSize: number;
+    embeddingCacheDir: string;
+    embeddingAllowRemoteModels: boolean;
+    embeddingQuantized: boolean;
+    semanticSearchTopKDefault: number;
+    semanticSearchMinScore: number;
+    ragMaxChunks: number;
+    ragChunkTokenBudget: number;
+  };
+  mistralOcr: {
+    apiKey: string;
+    baseUrl: string;
+    model: string;
+  };
+  providerKeyCrypto: {
+    encryptionKey: string;
   };
 };
-let cached: RuntimeConfig | null = null;
 
-type RuntimeValidationIssue = {
-  /**
-   * Dot-path or env key that failed validation.
-   */
-  path: string;
-  /**
-   * Human-readable expected value/type.
-   */
-  expected: string;
-  /**
-   * Raw value that was actually received.
-   */
-  received: unknown;
-  /**
-   * Suggested remediation shown to operators.
-   */
-  fixHint: string;
-};
+let cached: RuntimeConfig | null = null;
 
 /**
  * Error thrown when raw runtime inputs fail validation.
@@ -187,13 +321,8 @@ type RuntimeValidationIssue = {
  * Includes structured issues to support CLI diagnostics and actionable fixes.
  */
 export class RuntimeConfigValidationError extends Error {
-  /**
-  * Structured validation issues used by callers for diagnostics.
-   */
   readonly issues: RuntimeValidationIssue[];
-  /**
-  * Builds a readable multi-line error message from validation issues.
-   */
+
   constructor(issues: RuntimeValidationIssue[]) {
     super(
       [
@@ -255,6 +384,11 @@ const runtimeConfigSchema = z.object({
     allowedMimeTypes: z.array(z.string().min(1)),
     processTimeoutMs: z.number().int().positive(),
   }),
+  extraction: z.object({
+    xlsxMaxCols: z.number().int().positive(),
+    xlsxMaxRowsRenderPerSheet: z.number().int().positive(),
+    xlsxMaxRowsParsePerSheet: z.number().int().positive(),
+  }),
   agentRuntime: z.object({
     maxSteps: z.number().int().positive(),
     mastraAgentModel: z.string(),
@@ -268,15 +402,38 @@ const runtimeConfigSchema = z.object({
     parseIntentTimeoutMs: z.number().int().positive(),
     generateReplyTimeoutMs: z.number().int().positive(),
     streamStallTimeoutMs: z.number().int().positive(),
+    workflowContextCacheTtlMs: z.number().int().positive(),
+    intentWorkflowShortlist: z.number().int().positive(),
+    replyWorkflowShortlist: z.number().int().positive(),
   }),
   autoRouter: z.object({
     discoveryBreakerFailures: z.number().int().positive(),
     discoveryBreakerCooldownMs: z.number().int().positive(),
+    discoveryTtlMs: z.number().int().positive(),
+    discoveryTimeoutMs: z.number().int().positive(),
+    maxModelsPerProvider: z.number().int().positive(),
+    maxCandidates: z.number().int().positive(),
+    preferredReasoningModels: z.array(z.string().min(1)),
   }),
   attachmentScan: z.object({
     mode: z.enum(["off", "clamav", "http"]),
     failClosed: z.boolean(),
     timeoutMs: z.number().int().positive(),
+    httpUrl: z.string(),
+    httpToken: z.string(),
+    clamavHost: z.string().min(1),
+    clamavPort: z.number().int().positive(),
+  }),
+  callbackBaseUrl: z.string().url(),
+  auth: z.object({
+    frontendOrigin: z.string().url(),
+    sessionTtlDays: z.number().int().positive(),
+    revokeOtherSessionsOnPasswordChange: z.boolean(),
+    google: z.object({
+      clientId: z.string(),
+      clientSecret: z.string(),
+      redirectUri: z.string(),
+    }),
   }),
   metricsExporter: z.object({
     pushgatewayUrl: z.string(),
@@ -284,14 +441,164 @@ const runtimeConfigSchema = z.object({
     instanceId: z.string().min(1),
     pushIntervalMs: z.number().int().positive(),
     pushTimeoutMs: z.number().int().positive(),
+    snapshotEnabled: z.boolean(),
     snapshotPath: z.string().min(1),
+    allowPublic: z.boolean(),
+    authToken: z.string(),
+  }),
+  push: z.object({
+    vapidPublicKey: z.string(),
+    vapidPrivateKey: z.string(),
+    vapidSubject: z.string().min(1),
   }),
   features: z.object({
     typedContracts: z.boolean(),
     structuredLogging: z.boolean(),
     crossOriginIsolation: z.boolean(),
   }),
+  retrievalEmbedding: z.object({
+    embeddingProvider: z.enum(["api", "bge_local", "minilm_local"]),
+    embeddingApiKey: z.string(),
+    embeddingApiProvider: z.string(),
+    embeddingApiProviderId: z.string(),
+    embeddingsEnabled: z.boolean(),
+    embeddingsDebug: z.boolean(),
+    embeddingsIndexBatchSize: z.number().int().positive(),
+    embeddingsRetryMaxAttempts: z.number().int().positive(),
+    embeddingsRetryBaseDelayMs: z.number().int().positive(),
+    embeddingVectorDimensions: z.number().int().positive(),
+    embeddingModel: z.string().min(1),
+    embeddingMaxBatchSize: z.number().int().positive(),
+    embeddingCacheDir: z.string(),
+    embeddingAllowRemoteModels: z.boolean(),
+    embeddingQuantized: z.boolean(),
+    semanticSearchTopKDefault: z.number().int().positive(),
+    semanticSearchMinScore: z.number().min(0).max(1),
+    ragMaxChunks: z.number().int().positive(),
+    ragChunkTokenBudget: z.number().int().positive(),
+  }),
+  mistralOcr: z.object({
+    apiKey: z.string(),
+    baseUrl: z.string().url(),
+    model: z.string().min(1),
+  }),
+  providerKeyCrypto: z.object({
+    encryptionKey: z.string(),
+  }),
 });
+
+const DEFAULT_RUNTIME_CONFIG_FILE: RuntimeConfigFile = {
+  forceInteractiveQuestions: true,
+  uploadDir: "./uploads",
+  approvalMode: "default",
+  DEFAULT_TIMEZONE: "UTC",
+  ALLOW_PRIVATE_MODEL_FETCH: true,
+  MODEL_FETCH_TIMEOUT_MS: 10000,
+  MAX_MODEL_FETCH_BYTES: 2 * 1024 * 1024,
+  OLLAMA_URL: "http://localhost:11434",
+  CONTEXT_MODE_ENABLED: true,
+  CONTEXT_MODE_DEBUG: false,
+  CONTEXT_MODE_MAX_RETRIEVAL: 5,
+  CONTEXT_MODE_MODEL_MAX_RETRIEVAL_JSON: {},
+  CONTEXT_MODE_CONTENT_MAX_LEN: 4000,
+  CONTEXT_MODE_SUMMARY_MAX_LEN: 300,
+  CONTEXT_MODE_TARGET_WINDOW_TOKENS: 250000,
+  CONTEXT_MODE_HISTORY_BUDGET_TOKENS: 160000,
+  CONTEXT_MODE_RETRIEVED_CONTEXT_BUDGET_TOKENS: 70000,
+  CONTEXT_MODE_MAX_MESSAGE_TOKENS: 12000,
+  CONTEXT_MODE_MAX_CONTEXT_ITEM_TOKENS: 18000,
+  CONTEXT_MODE_CACHE_DATA_BUDGET_TOKENS: 48000,
+  CONTEXT_MODE_INDEX_WORKFLOW_RUNS: true,
+  CONTEXT_MODE_INDEX_DECISIONS: true,
+  CONTEXT_MODE_INDEX_THREAD_STATE: true,
+  CONTEXT_MODE_TTL_DAYS: 30,
+  CONTEXT_MODE_CACHE_ANSWER: true,
+  CONTEXT_MODE_CACHE_STALE_MINS: 15,
+  MAX_UPLOAD_MB: 25,
+  MAX_FILES_PER_MESSAGE: 6,
+  ALLOWED_MIME_TYPES: [
+    "image/*",
+    "audio/*",
+    "text/*",
+    "application/json",
+    "application/xml",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ],
+  ATTACHMENT_PROCESS_TIMEOUT_MS: 15000,
+  XLSX_MAX_COLS: 20,
+  XLSX_MAX_ROWS_RENDER_PER_SHEET: 200,
+  XLSX_MAX_ROWS_PARSE_PER_SHEET: 20000,
+  AGENT_RUNTIME_MAX_STEPS: 6,
+  MASTRA_AGENT_MODEL: "",
+  AGENT_MCP_ENABLED: false,
+  AGENT_MCP_SERVERS_JSON: {},
+  AGENT_MCP_TIMEOUT_MS: 15000,
+  LLM_PARSE_INTENT_TIMEOUT_MS: 12000,
+  LLM_GENERATE_REPLY_TIMEOUT_MS: 30000,
+  LLM_STREAM_STALL_TIMEOUT_MS: 12000,
+  WORKFLOW_CONTEXT_CACHE_TTL_MS: 30000,
+  LLM_INTENT_WORKFLOW_SHORTLIST: 8,
+  LLM_REPLY_WORKFLOW_SHORTLIST: 10,
+  AUTO_ROUTER_DISCOVERY_BREAKER_FAILURES: 3,
+  AUTO_ROUTER_DISCOVERY_BREAKER_COOLDOWN_MS: 45000,
+  AUTO_ROUTER_DISCOVERY_TTL_MS: 600000,
+  AUTO_ROUTER_DISCOVERY_TIMEOUT_MS: 4500,
+  AUTO_ROUTER_MAX_MODELS_PER_PROVIDER: 3,
+  AUTO_ROUTER_MAX_CANDIDATES: 8,
+  AUTO_ROUTER_PREFERRED_REASONING_MODELS: [
+    "glm-5",
+    "mistral-large",
+    "gpt-oss-120b",
+    "minimax-m2.7",
+  ],
+  ATTACHMENT_SCAN_MODE: "off",
+  ATTACHMENT_SCAN_FAIL_CLOSED: false,
+  ATTACHMENT_SCAN_TIMEOUT_MS: 5000,
+  METRICS_PUSHGATEWAY_URL: "",
+  METRICS_JOB_NAME: "autopilot-backend",
+  METRICS_INSTANCE_ID: "",
+  METRICS_PUSH_INTERVAL_MS: 15000,
+  METRICS_PUSH_TIMEOUT_MS: 5000,
+  METRICS_SNAPSHOT_ENABLED: false,
+  METRICS_SNAPSHOT_PATH: "",
+  METRICS_ALLOW_PUBLIC: false,
+  METRICS_AUTH_TOKEN: "",
+  EMBEDDING_PROVIDER: "api",
+  EMBEDDING_API_KEY: "",
+  EMBEDDING_API_PROVIDER: "",
+  EMBEDDING_API_PROVIDER_ID: "",
+  EMBEDDINGS_ENABLED: true,
+  EMBEDDINGS_DEBUG: false,
+  EMBEDDINGS_INDEX_BATCH_SIZE: 32,
+  EMBEDDINGS_RETRY_MAX_ATTEMPTS: 3,
+  EMBEDDINGS_RETRY_BASE_DELAY_MS: 250,
+  EMBEDDING_VECTOR_DIMENSIONS: 768,
+  EMBEDDING_MODEL: "text-embedding-004",
+  EMBEDDING_MAX_BATCH_SIZE: 32,
+  EMBEDDING_CACHE_DIR: "",
+  EMBEDDING_ALLOW_REMOTE_MODELS: true,
+  EMBEDDING_QUANTIZED: true,
+  SEMANTIC_SEARCH_TOP_K_DEFAULT: 8,
+  SEMANTIC_SEARCH_MIN_SCORE: 0.65,
+  RAG_MAX_CHUNKS: 8,
+  RAG_CHUNK_TOKEN_BUDGET: 2400,
+  MISTRAL_OCR_BASE_URL: "https://api.mistral.ai/v1",
+  MISTRAL_OCR_MODEL: "mistral-ocr-latest",
+};
+
+function ensureRuntimeConfigFileExists(homeDir: string, configPath: string): void {
+  const existing = readRuntimeConfigTextSync(configPath);
+  if (existing !== null) return;
+
+  ensureRuntimeConfigDirSync(homeDir);
+  writeRuntimeConfigTextSync(configPath, `${JSON.stringify(DEFAULT_RUNTIME_CONFIG_FILE, null, 2)}\n`);
+}
 
 /**
  * Reads and parses the optional runtime JSON config file.
@@ -301,13 +608,13 @@ const runtimeConfigSchema = z.object({
  */
 function readConfigFile(configPath: string): RuntimeConfigFile {
   try {
-    if (!fs.existsSync(configPath)) return {};
-        const raw = fs.readFileSync(configPath, "utf8");
-        const parsed = JSON.parse(raw);
+    const raw = readRuntimeConfigTextSync(configPath);
+    if (raw === null) return {};
+    const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return {};
     return parsed as RuntimeConfigFile;
   } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+    const message = err instanceof Error ? err.message : String(err);
     throw new RuntimeConfigValidationError([
       {
         path: "configPath",
@@ -320,286 +627,10 @@ function readConfigFile(configPath: string): RuntimeConfigFile {
 }
 
 /**
- * Coerces boolean-like inputs (`true`, `1`, `yes`, etc.) with a fallback.
- */
-function parseBoolean(value: unknown, fallback: boolean): boolean {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") {
-        const normalized = value.trim().toLowerCase();
-    if (!normalized) return fallback;
-    if (["1", "true", "yes", "on"].includes(normalized)) return true;
-    if (["0", "false", "no", "off"].includes(normalized)) return false;
-  }
-  return fallback;
-}
-
-/**
- * Checks whether a value can be interpreted as a supported boolean token.
- */
-function isBooleanLike(value: unknown): boolean {
-  if (typeof value === "boolean") return true;
-  if (typeof value !== "string") return false;
-    const normalized = value.trim().toLowerCase();
-  return ["1", "true", "yes", "on", "0", "false", "no", "off"].includes(normalized);
-}
-
-/**
- * Checks whether a value can be safely coerced to a finite number.
- */
-function isNumberLike(value: unknown): boolean {
-  if (typeof value === "number") return Number.isFinite(value);
-  if (typeof value === "string") {
-    if (!value.trim()) return false;
-    return Number.isFinite(Number(value));
-  }
-  return false;
-}
-
-/**
- * Coerces a value into a finite number, otherwise returning the fallback.
- */
-function parseNumber(value: unknown, fallback: number): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-        const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return fallback;
-}
-
-/**
- * Trims string inputs and returns a fallback when empty or non-string.
- */
-function parseString(value: unknown, fallback = ""): string {
-  if (typeof value !== "string") return fallback;
-    const trimmed = value.trim();
-  return trimmed || fallback;
-}
-
-/**
- * Parses either a CSV string or string array into a normalized lowercase list.
- */
-function parseStringList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => String(item || "").trim().toLowerCase())
-      .filter(Boolean);
-  }
-  if (typeof value === "string") {
-    return value
-      .split(",")
-      .map((item) => item.trim().toLowerCase())
-      .filter(Boolean);
-  }
-  return [];
-}
-
-/**
- * Parses a key-number map from an object or JSON string and filters invalid entries.
- */
-function parseNumberMap(value: unknown): Record<string, number> {
-    const source = typeof value === "string" && value.trim()
-    ? safeJsonParse(value)
-    : value;
-  if (!source || typeof source !== "object") return {};
-
-    const entries = Object.entries(source as Record<string, unknown>);
-    const out: Record<string, number> = {};
-  for (const [key, rawValue] of entries) {
-        const normalizedKey = key.trim().toLowerCase();
-    if (!normalizedKey) continue;
-        const parsedValue = parseNumber(rawValue, Number.NaN);
-    if (!Number.isFinite(parsedValue) || parsedValue <= 0) continue;
-    out[normalizedKey] = parsedValue;
-  }
-  return out;
-}
-
-/**
- * Parses JSON safely and returns `null` instead of throwing.
- */
-function safeJsonParse(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Validates unparsed raw env/config inputs before coercion.
- *
- * @returns List of actionable validation issues; empty when inputs are acceptable.
- */
-function validateRuntimeRawInputs(inputs: Record<string, unknown>): RuntimeValidationIssue[] {
-    const issues: RuntimeValidationIssue[] = [];
-    const boolKeys = [
-    "CONTEXT_MODE_ENABLED",
-    "CONTEXT_MODE_DEBUG",
-    "CONTEXT_MODE_INDEX_WORKFLOW_RUNS",
-    "CONTEXT_MODE_INDEX_DECISIONS",
-    "CONTEXT_MODE_INDEX_THREAD_STATE",
-    "CONTEXT_MODE_CACHE_ANSWER",
-    "ALLOW_PRIVATE_MODEL_FETCH",
-    "AGENT_MCP_ENABLED",
-    "FEATURE_TYPED_CONTRACTS",
-    "FEATURE_STRUCTURED_LOGGING",
-    "FEATURE_CROSS_ORIGIN_ISOLATION",
-  ];
-    const numberKeys = [
-    "MODEL_FETCH_TIMEOUT_MS",
-    "MAX_MODEL_FETCH_BYTES",
-    "CONTEXT_MODE_MAX_RETRIEVAL",
-    "CONTEXT_MODE_CONTENT_MAX_LEN",
-    "CONTEXT_MODE_SUMMARY_MAX_LEN",
-    "CONTEXT_MODE_TARGET_WINDOW_TOKENS",
-    "CONTEXT_MODE_HISTORY_BUDGET_TOKENS",
-    "CONTEXT_MODE_RETRIEVED_CONTEXT_BUDGET_TOKENS",
-    "CONTEXT_MODE_MAX_MESSAGE_TOKENS",
-    "CONTEXT_MODE_MAX_CONTEXT_ITEM_TOKENS",
-    "CONTEXT_MODE_CACHE_DATA_BUDGET_TOKENS",
-    "CONTEXT_MODE_TTL_DAYS",
-    "CONTEXT_MODE_CACHE_STALE_MINS",
-    "MAX_UPLOAD_MB",
-    "MAX_FILES_PER_MESSAGE",
-    "ATTACHMENT_PROCESS_TIMEOUT_MS",
-    "AGENT_RUNTIME_MAX_STEPS",
-    "AGENT_MCP_TIMEOUT_MS",
-    "LLM_PARSE_INTENT_TIMEOUT_MS",
-    "LLM_GENERATE_REPLY_TIMEOUT_MS",
-    "LLM_STREAM_STALL_TIMEOUT_MS",
-    "AUTO_ROUTER_DISCOVERY_BREAKER_FAILURES",
-    "AUTO_ROUTER_DISCOVERY_BREAKER_COOLDOWN_MS",
-    "ATTACHMENT_SCAN_TIMEOUT_MS",
-    "METRICS_PUSH_INTERVAL_MS",
-    "METRICS_PUSH_TIMEOUT_MS",
-  ];
-    const jsonMapKeys = ["CONTEXT_MODE_MODEL_MAX_RETRIEVAL_JSON", "AGENT_MCP_SERVERS_JSON"];
-
-  for (const key of boolKeys) {
-        const value = inputs[key];
-    if (value === undefined || value === null || value === "") continue;
-    if (!isBooleanLike(value)) {
-      issues.push({
-        path: key,
-        expected: "boolean-like value (true/false/1/0/yes/no)",
-        received: value,
-        fixHint: `Set ${key} to true or false in config.json/env.`,
-      });
-    }
-  }
-  for (const key of numberKeys) {
-        const value = inputs[key];
-    if (value === undefined || value === null || value === "") continue;
-    if (!isNumberLike(value)) {
-      issues.push({
-        path: key,
-        expected: "finite number",
-        received: value,
-        fixHint: `Set ${key} to a numeric value in config.json/env.`,
-      });
-    }
-  }
-  for (const key of jsonMapKeys) {
-        const value = inputs[key];
-    if (value === undefined || value === null || value === "") continue;
-    if (typeof value === "object") continue;
-    if (typeof value === "string" && safeJsonParse(value) && typeof safeJsonParse(value) === "object") continue;
-    issues.push({
-      path: key,
-      expected: "JSON object",
-      received: value,
-      fixHint: `Set ${key} as valid JSON object string (or object in config.json).`,
-    });
-  }
-
-    const mimeTypes = inputs.ALLOWED_MIME_TYPES;
-  if (mimeTypes !== undefined && mimeTypes !== null && mimeTypes !== "") {
-        const valid =
-      (typeof mimeTypes === "string" && !!mimeTypes.trim()) ||
-      (Array.isArray(mimeTypes) && mimeTypes.every((v) => typeof v === "string"));
-    if (!valid) {
-      issues.push({
-        path: "ALLOWED_MIME_TYPES",
-        expected: "comma-separated string or string[]",
-        received: mimeTypes,
-        fixHint: "Provide MIME types as csv string or array.",
-      });
-    }
-  }
-
-    const ollamaUrl = inputs.OLLAMA_URL;
-  if (ollamaUrl !== undefined && ollamaUrl !== null && ollamaUrl !== "") {
-    try {
-      // eslint-disable-next-line no-new
-      new URL(String(ollamaUrl));
-    } catch {
-      issues.push({
-        path: "OLLAMA_URL",
-        expected: "valid URL",
-        received: ollamaUrl,
-        fixHint: "Set OLLAMA_URL to a valid URL, e.g. http://localhost:11434",
-      });
-    }
-  }
-    const scanMode = String(inputs.ATTACHMENT_SCAN_MODE ?? "").trim().toLowerCase();
-  if (scanMode && !["off", "clamav", "http"].includes(scanMode)) {
-    issues.push({
-      path: "ATTACHMENT_SCAN_MODE",
-      expected: "one of off|clamav|http",
-      received: inputs.ATTACHMENT_SCAN_MODE,
-      fixHint: "Set ATTACHMENT_SCAN_MODE to off, clamav, or http.",
-    });
-  }
-    const metricsPushgatewayUrl = inputs.METRICS_PUSHGATEWAY_URL;
-  if (metricsPushgatewayUrl !== undefined && metricsPushgatewayUrl !== null && metricsPushgatewayUrl !== "") {
-    try {
-      // eslint-disable-next-line no-new
-      new URL(String(metricsPushgatewayUrl));
-    } catch {
-      issues.push({
-        path: "METRICS_PUSHGATEWAY_URL",
-        expected: "valid URL",
-        received: metricsPushgatewayUrl,
-        fixHint: "Set METRICS_PUSHGATEWAY_URL to a valid URL or leave empty to disable exporter.",
-      });
-    }
-  }
-  return issues;
-}
-
-/**
- * Normalizes MCP server configuration from JSON/object input.
- *
- * Invalid server entries (including malformed `url`) are dropped.
- */
-function normalizeMcpServers(raw: unknown): MCPClientOptions["servers"] {
-    const source = typeof raw === "string" && raw.trim()
-    ? safeJsonParse(raw)
-    : raw;
-  if (!source || typeof source !== "object") return {};
-
-    const servers: MCPClientOptions["servers"] = {};
-  for (const [name, cfg] of Object.entries(source as Record<string, unknown>)) {
-    if (!cfg || typeof cfg !== "object") continue;
-        const item = { ...(cfg as Record<string, unknown>) };
-    if (typeof item.url === "string" && item.url.trim()) {
-      try {
-        item.url = new URL(item.url);
-      } catch {
-        continue;
-      }
-    }
-    servers[name] = item as MCPClientOptions["servers"][string];
-  }
-  return servers;
-}
-
-/**
  * Parses runtime approval mode, falling back to the provided default.
  */
 function parseApprovalMode(value: unknown, fallback: RuntimeApprovalMode): RuntimeApprovalMode {
-    const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "auto") return "auto";
   if (normalized === "default") return "default";
   return fallback;
@@ -611,323 +642,51 @@ function parseApprovalMode(value: unknown, fallback: RuntimeApprovalMode): Runti
 function _getRuntimeConfig(): RuntimeConfig {
   if (cached) return cached;
 
-    const homeDir = path.resolve(
-    process.env.AUTOPILOT_HOME?.trim() || path.join(os.homedir(), ".autopilot"),
-  );
-    const configPath = path.join(homeDir, "config.json");
-    const fileCfg = readConfigFile(configPath);
+  const homeDir = getHomeDirectory();
+  const configPath = joinPath(homeDir, "config.json");
+  ensureRuntimeConfigFileExists(homeDir, configPath);
+  const fileCfg = readConfigFile(configPath);
 
-    const fileForce = typeof fileCfg.forceInteractiveQuestions === "boolean"
+  const fileForce = typeof fileCfg.forceInteractiveQuestions === "boolean"
     ? fileCfg.forceInteractiveQuestions
     : undefined;
-  // Single global switch, canonical source: ~/.autopilot/config.json
-    const forceInteractiveQuestions = fileForce ?? true;
-    const approvalMode = parseApprovalMode(fileCfg.approvalMode, "default");
+  const forceInteractiveQuestions = fileForce ?? true;
+  const approvalMode = parseApprovalMode(fileCfg.approvalMode, "default");
 
-    const fileUploadDir = typeof fileCfg.uploadDir === "string" && fileCfg.uploadDir.trim()
+  const fileUploadDir = typeof fileCfg.uploadDir === "string" && fileCfg.uploadDir.trim()
     ? fileCfg.uploadDir.trim()
     : "";
-  // Canonical upload location also comes from runtime config file.
-    const uploadDir = path.resolve(fileUploadDir || path.join(homeDir, "uploads"));
-    const defaultTimezone = parseString(fileCfg.DEFAULT_TIMEZONE, process.env.DEFAULT_TIMEZONE || "UTC");
-    const contextModelMaxRetrieval = parseNumberMap(
+  const uploadDir = resolvePath(fileUploadDir || joinPath(homeDir, "uploads"));
+  const defaultTimezone = parseString(fileCfg.DEFAULT_TIMEZONE, process.env.DEFAULT_TIMEZONE || "UTC");
+  const contextModelMaxRetrieval = parseNumberMap(
     fileCfg.CONTEXT_MODE_MODEL_MAX_RETRIEVAL_JSON ?? process.env.CONTEXT_MODE_MODEL_MAX_RETRIEVAL_JSON,
   );
-    const allowedMimeTypes = parseStringList(
+  const allowedMimeTypes = parseStringList(
     fileCfg.ALLOWED_MIME_TYPES ?? process.env.ALLOWED_MIME_TYPES,
   );
-    const mcpServers = normalizeMcpServers(
+  const mcpServers = normalizeMcpServers(
     fileCfg.AGENT_MCP_SERVERS_JSON ?? process.env.AGENT_MCP_SERVERS_JSON,
   );
-    const validationIssues = validateRuntimeRawInputs({
-    ...fileCfg,
-    DEFAULT_TIMEZONE: fileCfg.DEFAULT_TIMEZONE ?? process.env.DEFAULT_TIMEZONE,
-    ALLOW_PRIVATE_MODEL_FETCH: fileCfg.ALLOW_PRIVATE_MODEL_FETCH ?? process.env.ALLOW_PRIVATE_MODEL_FETCH,
-    MODEL_FETCH_TIMEOUT_MS: fileCfg.MODEL_FETCH_TIMEOUT_MS ?? process.env.MODEL_FETCH_TIMEOUT_MS,
-    MAX_MODEL_FETCH_BYTES: fileCfg.MAX_MODEL_FETCH_BYTES ?? process.env.MAX_MODEL_FETCH_BYTES,
-    OLLAMA_URL: fileCfg.OLLAMA_URL ?? process.env.OLLAMA_URL,
-    CONTEXT_MODE_ENABLED: fileCfg.CONTEXT_MODE_ENABLED ?? process.env.CONTEXT_MODE_ENABLED,
-    CONTEXT_MODE_DEBUG: fileCfg.CONTEXT_MODE_DEBUG ?? process.env.CONTEXT_MODE_DEBUG,
-    CONTEXT_MODE_MAX_RETRIEVAL: fileCfg.CONTEXT_MODE_MAX_RETRIEVAL ?? process.env.CONTEXT_MODE_MAX_RETRIEVAL,
-    CONTEXT_MODE_MODEL_MAX_RETRIEVAL_JSON:
-      fileCfg.CONTEXT_MODE_MODEL_MAX_RETRIEVAL_JSON ?? process.env.CONTEXT_MODE_MODEL_MAX_RETRIEVAL_JSON,
-    CONTEXT_MODE_CONTENT_MAX_LEN: fileCfg.CONTEXT_MODE_CONTENT_MAX_LEN ?? process.env.CONTEXT_MODE_CONTENT_MAX_LEN,
-    CONTEXT_MODE_SUMMARY_MAX_LEN: fileCfg.CONTEXT_MODE_SUMMARY_MAX_LEN ?? process.env.CONTEXT_MODE_SUMMARY_MAX_LEN,
-    CONTEXT_MODE_TARGET_WINDOW_TOKENS:
-      fileCfg.CONTEXT_MODE_TARGET_WINDOW_TOKENS ?? process.env.CONTEXT_MODE_TARGET_WINDOW_TOKENS,
-    CONTEXT_MODE_HISTORY_BUDGET_TOKENS:
-      fileCfg.CONTEXT_MODE_HISTORY_BUDGET_TOKENS ?? process.env.CONTEXT_MODE_HISTORY_BUDGET_TOKENS,
-    CONTEXT_MODE_RETRIEVED_CONTEXT_BUDGET_TOKENS:
-      fileCfg.CONTEXT_MODE_RETRIEVED_CONTEXT_BUDGET_TOKENS ?? process.env.CONTEXT_MODE_RETRIEVED_CONTEXT_BUDGET_TOKENS,
-    CONTEXT_MODE_MAX_MESSAGE_TOKENS:
-      fileCfg.CONTEXT_MODE_MAX_MESSAGE_TOKENS ?? process.env.CONTEXT_MODE_MAX_MESSAGE_TOKENS,
-    CONTEXT_MODE_MAX_CONTEXT_ITEM_TOKENS:
-      fileCfg.CONTEXT_MODE_MAX_CONTEXT_ITEM_TOKENS ?? process.env.CONTEXT_MODE_MAX_CONTEXT_ITEM_TOKENS,
-    CONTEXT_MODE_CACHE_DATA_BUDGET_TOKENS:
-      fileCfg.CONTEXT_MODE_CACHE_DATA_BUDGET_TOKENS ?? process.env.CONTEXT_MODE_CACHE_DATA_BUDGET_TOKENS,
-    CONTEXT_MODE_INDEX_WORKFLOW_RUNS:
-      fileCfg.CONTEXT_MODE_INDEX_WORKFLOW_RUNS ?? process.env.CONTEXT_MODE_INDEX_WORKFLOW_RUNS,
-    CONTEXT_MODE_INDEX_DECISIONS:
-      fileCfg.CONTEXT_MODE_INDEX_DECISIONS ?? process.env.CONTEXT_MODE_INDEX_DECISIONS,
-    CONTEXT_MODE_INDEX_THREAD_STATE:
-      fileCfg.CONTEXT_MODE_INDEX_THREAD_STATE ?? process.env.CONTEXT_MODE_INDEX_THREAD_STATE,
-    CONTEXT_MODE_TTL_DAYS: fileCfg.CONTEXT_MODE_TTL_DAYS ?? process.env.CONTEXT_MODE_TTL_DAYS,
-    CONTEXT_MODE_CACHE_ANSWER: fileCfg.CONTEXT_MODE_CACHE_ANSWER ?? process.env.CONTEXT_MODE_CACHE_ANSWER,
-    CONTEXT_MODE_CACHE_STALE_MINS: fileCfg.CONTEXT_MODE_CACHE_STALE_MINS ?? process.env.CONTEXT_MODE_CACHE_STALE_MINS,
-    MAX_UPLOAD_MB: fileCfg.MAX_UPLOAD_MB ?? process.env.MAX_UPLOAD_MB,
-    MAX_FILES_PER_MESSAGE: fileCfg.MAX_FILES_PER_MESSAGE ?? process.env.MAX_FILES_PER_MESSAGE,
-    ALLOWED_MIME_TYPES: fileCfg.ALLOWED_MIME_TYPES ?? process.env.ALLOWED_MIME_TYPES,
-    ATTACHMENT_PROCESS_TIMEOUT_MS:
-      fileCfg.ATTACHMENT_PROCESS_TIMEOUT_MS ?? process.env.ATTACHMENT_PROCESS_TIMEOUT_MS,
-    AGENT_RUNTIME_MAX_STEPS: fileCfg.AGENT_RUNTIME_MAX_STEPS ?? process.env.AGENT_RUNTIME_MAX_STEPS,
-    AGENT_MCP_ENABLED: fileCfg.AGENT_MCP_ENABLED ?? process.env.AGENT_MCP_ENABLED,
-    AGENT_MCP_SERVERS_JSON: fileCfg.AGENT_MCP_SERVERS_JSON ?? process.env.AGENT_MCP_SERVERS_JSON,
-    AGENT_MCP_TIMEOUT_MS: fileCfg.AGENT_MCP_TIMEOUT_MS ?? process.env.AGENT_MCP_TIMEOUT_MS,
-    LLM_PARSE_INTENT_TIMEOUT_MS: fileCfg.LLM_PARSE_INTENT_TIMEOUT_MS ?? process.env.LLM_PARSE_INTENT_TIMEOUT_MS,
-    LLM_GENERATE_REPLY_TIMEOUT_MS: fileCfg.LLM_GENERATE_REPLY_TIMEOUT_MS ?? process.env.LLM_GENERATE_REPLY_TIMEOUT_MS,
-    LLM_STREAM_STALL_TIMEOUT_MS: fileCfg.LLM_STREAM_STALL_TIMEOUT_MS ?? process.env.LLM_STREAM_STALL_TIMEOUT_MS,
-    AUTO_ROUTER_DISCOVERY_BREAKER_FAILURES:
-      fileCfg.AUTO_ROUTER_DISCOVERY_BREAKER_FAILURES ?? process.env.AUTO_ROUTER_DISCOVERY_BREAKER_FAILURES,
-    AUTO_ROUTER_DISCOVERY_BREAKER_COOLDOWN_MS:
-      fileCfg.AUTO_ROUTER_DISCOVERY_BREAKER_COOLDOWN_MS ?? process.env.AUTO_ROUTER_DISCOVERY_BREAKER_COOLDOWN_MS,
-    ATTACHMENT_SCAN_MODE: fileCfg.ATTACHMENT_SCAN_MODE ?? process.env.ATTACHMENT_SCAN_MODE,
-    ATTACHMENT_SCAN_FAIL_CLOSED: fileCfg.ATTACHMENT_SCAN_FAIL_CLOSED ?? process.env.ATTACHMENT_SCAN_FAIL_CLOSED,
-    ATTACHMENT_SCAN_TIMEOUT_MS: fileCfg.ATTACHMENT_SCAN_TIMEOUT_MS ?? process.env.ATTACHMENT_SCAN_TIMEOUT_MS,
-    METRICS_PUSHGATEWAY_URL: fileCfg.METRICS_PUSHGATEWAY_URL ?? process.env.METRICS_PUSHGATEWAY_URL,
-    METRICS_JOB_NAME: fileCfg.METRICS_JOB_NAME ?? process.env.METRICS_JOB_NAME,
-    METRICS_INSTANCE_ID: fileCfg.METRICS_INSTANCE_ID ?? process.env.METRICS_INSTANCE_ID,
-    METRICS_PUSH_INTERVAL_MS: fileCfg.METRICS_PUSH_INTERVAL_MS ?? process.env.METRICS_PUSH_INTERVAL_MS,
-    METRICS_PUSH_TIMEOUT_MS: fileCfg.METRICS_PUSH_TIMEOUT_MS ?? process.env.METRICS_PUSH_TIMEOUT_MS,
-    METRICS_SNAPSHOT_PATH: fileCfg.METRICS_SNAPSHOT_PATH ?? process.env.METRICS_SNAPSHOT_PATH,
-    FEATURE_TYPED_CONTRACTS: fileCfg.FEATURE_TYPED_CONTRACTS ?? process.env.FEATURE_TYPED_CONTRACTS,
-    FEATURE_STRUCTURED_LOGGING: fileCfg.FEATURE_STRUCTURED_LOGGING ?? process.env.FEATURE_STRUCTURED_LOGGING,
-    FEATURE_CROSS_ORIGIN_ISOLATION:
-      fileCfg.FEATURE_CROSS_ORIGIN_ISOLATION ?? process.env.FEATURE_CROSS_ORIGIN_ISOLATION,
-  });
+  const validationIssues = validateRuntimeRawInputs(buildRuntimeValidationInputs(fileCfg));
   if (validationIssues.length > 0) {
     throw new RuntimeConfigValidationError(validationIssues);
   }
 
-  cached = {
+  cached = buildRuntimeConfig({
     homeDir,
     configPath,
+    fileCfg,
     forceInteractiveQuestions,
     uploadDir,
     approvalMode,
     defaultTimezone,
-    modelFetch: {
-      allowPrivate: parseBoolean(
-        fileCfg.ALLOW_PRIVATE_MODEL_FETCH ?? process.env.ALLOW_PRIVATE_MODEL_FETCH,
-        process.env.NODE_ENV === "production" ? false : true,
-      ),
-      timeoutMs: parseNumber(
-        fileCfg.MODEL_FETCH_TIMEOUT_MS ?? process.env.MODEL_FETCH_TIMEOUT_MS,
-        10_000,
-      ),
-      maxBytes: parseNumber(
-        fileCfg.MAX_MODEL_FETCH_BYTES ?? process.env.MAX_MODEL_FETCH_BYTES,
-        2 * 1024 * 1024,
-      ),
-    },
-    ollamaUrl: parseString(
-      fileCfg.OLLAMA_URL,
-      process.env.OLLAMA_URL || "http://localhost:11434",
-    ),
-    contextMode: {
-      enabled: parseBoolean(
-        fileCfg.CONTEXT_MODE_ENABLED ?? process.env.CONTEXT_MODE_ENABLED,
-        true,
-      ),
-      debug: parseBoolean(
-        fileCfg.CONTEXT_MODE_DEBUG ?? process.env.CONTEXT_MODE_DEBUG,
-        false,
-      ),
-      maxRetrieval: parseNumber(
-        fileCfg.CONTEXT_MODE_MAX_RETRIEVAL ?? process.env.CONTEXT_MODE_MAX_RETRIEVAL,
-        5,
-      ),
-      modelMaxRetrieval: contextModelMaxRetrieval,
-      contentMaxLength: parseNumber(
-        fileCfg.CONTEXT_MODE_CONTENT_MAX_LEN ?? process.env.CONTEXT_MODE_CONTENT_MAX_LEN,
-        4000,
-      ),
-      summaryMaxLength: parseNumber(
-        fileCfg.CONTEXT_MODE_SUMMARY_MAX_LEN ?? process.env.CONTEXT_MODE_SUMMARY_MAX_LEN,
-        300,
-      ),
-      targetWindowTokens: parseNumber(
-        fileCfg.CONTEXT_MODE_TARGET_WINDOW_TOKENS ?? process.env.CONTEXT_MODE_TARGET_WINDOW_TOKENS,
-        250_000,
-      ),
-      historyBudgetTokens: parseNumber(
-        fileCfg.CONTEXT_MODE_HISTORY_BUDGET_TOKENS ?? process.env.CONTEXT_MODE_HISTORY_BUDGET_TOKENS,
-        160_000,
-      ),
-      retrievedContextBudgetTokens: parseNumber(
-        fileCfg.CONTEXT_MODE_RETRIEVED_CONTEXT_BUDGET_TOKENS ?? process.env.CONTEXT_MODE_RETRIEVED_CONTEXT_BUDGET_TOKENS,
-        70_000,
-      ),
-      maxMessageTokens: parseNumber(
-        fileCfg.CONTEXT_MODE_MAX_MESSAGE_TOKENS ?? process.env.CONTEXT_MODE_MAX_MESSAGE_TOKENS,
-        12_000,
-      ),
-      maxContextItemTokens: parseNumber(
-        fileCfg.CONTEXT_MODE_MAX_CONTEXT_ITEM_TOKENS ?? process.env.CONTEXT_MODE_MAX_CONTEXT_ITEM_TOKENS,
-        18_000,
-      ),
-      cacheDataBudgetTokens: parseNumber(
-        fileCfg.CONTEXT_MODE_CACHE_DATA_BUDGET_TOKENS ?? process.env.CONTEXT_MODE_CACHE_DATA_BUDGET_TOKENS,
-        48_000,
-      ),
-      index: {
-        workflowRuns: parseBoolean(
-          fileCfg.CONTEXT_MODE_INDEX_WORKFLOW_RUNS ?? process.env.CONTEXT_MODE_INDEX_WORKFLOW_RUNS,
-          true,
-        ),
-        decisions: parseBoolean(
-          fileCfg.CONTEXT_MODE_INDEX_DECISIONS ?? process.env.CONTEXT_MODE_INDEX_DECISIONS,
-          true,
-        ),
-        threadState: parseBoolean(
-          fileCfg.CONTEXT_MODE_INDEX_THREAD_STATE ?? process.env.CONTEXT_MODE_INDEX_THREAD_STATE,
-          true,
-        ),
-      },
-      ttlDays: parseNumber(
-        fileCfg.CONTEXT_MODE_TTL_DAYS ?? process.env.CONTEXT_MODE_TTL_DAYS,
-        30,
-      ),
-      cache: {
-        enabled: parseBoolean(
-          fileCfg.CONTEXT_MODE_CACHE_ANSWER ?? process.env.CONTEXT_MODE_CACHE_ANSWER,
-          true,
-        ),
-        staleMins: parseNumber(
-          fileCfg.CONTEXT_MODE_CACHE_STALE_MINS ?? process.env.CONTEXT_MODE_CACHE_STALE_MINS,
-          15,
-        ),
-      },
-    },
-    attachments: {
-      maxUploadMb: parseNumber(
-        fileCfg.MAX_UPLOAD_MB ?? process.env.MAX_UPLOAD_MB,
-        25,
-      ),
-      maxFilesPerMessage: parseNumber(
-        fileCfg.MAX_FILES_PER_MESSAGE ?? process.env.MAX_FILES_PER_MESSAGE,
-        6,
-      ),
-      allowedMimeTypes,
-      processTimeoutMs: parseNumber(
-        fileCfg.ATTACHMENT_PROCESS_TIMEOUT_MS ?? process.env.ATTACHMENT_PROCESS_TIMEOUT_MS,
-        15_000,
-      ),
-    },
-    agentRuntime: {
-      maxSteps: parseNumber(
-        fileCfg.AGENT_RUNTIME_MAX_STEPS ?? process.env.AGENT_RUNTIME_MAX_STEPS,
-        6,
-      ),
-      mastraAgentModel: parseString(
-        fileCfg.MASTRA_AGENT_MODEL,
-        process.env.MASTRA_AGENT_MODEL || "",
-      ),
-      mcp: {
-        enabled: parseBoolean(
-          fileCfg.AGENT_MCP_ENABLED ?? process.env.AGENT_MCP_ENABLED,
-          false,
-        ),
-        servers: mcpServers,
-        timeoutMs: parseNumber(
-          fileCfg.AGENT_MCP_TIMEOUT_MS ?? process.env.AGENT_MCP_TIMEOUT_MS,
-          15_000,
-        ),
-      },
-    },
-    llm: {
-      parseIntentTimeoutMs: parseNumber(
-        fileCfg.LLM_PARSE_INTENT_TIMEOUT_MS ?? process.env.LLM_PARSE_INTENT_TIMEOUT_MS,
-        12_000,
-      ),
-      generateReplyTimeoutMs: parseNumber(
-        fileCfg.LLM_GENERATE_REPLY_TIMEOUT_MS ?? process.env.LLM_GENERATE_REPLY_TIMEOUT_MS,
-        30_000,
-      ),
-      streamStallTimeoutMs: parseNumber(
-        fileCfg.LLM_STREAM_STALL_TIMEOUT_MS ?? process.env.LLM_STREAM_STALL_TIMEOUT_MS,
-        12_000,
-      ),
-    },
-    autoRouter: {
-      discoveryBreakerFailures: parseNumber(
-        fileCfg.AUTO_ROUTER_DISCOVERY_BREAKER_FAILURES ?? process.env.AUTO_ROUTER_DISCOVERY_BREAKER_FAILURES,
-        3,
-      ),
-      discoveryBreakerCooldownMs: parseNumber(
-        fileCfg.AUTO_ROUTER_DISCOVERY_BREAKER_COOLDOWN_MS ?? process.env.AUTO_ROUTER_DISCOVERY_BREAKER_COOLDOWN_MS,
-        45_000,
-      ),
-    },
-    attachmentScan: {
-            mode: (() => {
-                const mode = String(
-          fileCfg.ATTACHMENT_SCAN_MODE ?? process.env.ATTACHMENT_SCAN_MODE ?? "off",
-        ).trim().toLowerCase();
-        return (mode === "clamav" || mode === "http" ? mode : "off") as "off" | "clamav" | "http";
-      })(),
-      failClosed: parseBoolean(
-        fileCfg.ATTACHMENT_SCAN_FAIL_CLOSED ?? process.env.ATTACHMENT_SCAN_FAIL_CLOSED,
-        false,
-      ),
-      timeoutMs: parseNumber(
-        fileCfg.ATTACHMENT_SCAN_TIMEOUT_MS ?? process.env.ATTACHMENT_SCAN_TIMEOUT_MS,
-        5_000,
-      ),
-    },
-    metricsExporter: {
-      pushgatewayUrl: parseString(
-        fileCfg.METRICS_PUSHGATEWAY_URL,
-        process.env.METRICS_PUSHGATEWAY_URL || "",
-      ),
-      jobName: parseString(
-        fileCfg.METRICS_JOB_NAME,
-        process.env.METRICS_JOB_NAME || "autopilot-backend",
-      ),
-      instanceId: parseString(
-        fileCfg.METRICS_INSTANCE_ID,
-        process.env.METRICS_INSTANCE_ID || process.env.HOSTNAME || String(process.pid),
-      ),
-      pushIntervalMs: parseNumber(
-        fileCfg.METRICS_PUSH_INTERVAL_MS ?? process.env.METRICS_PUSH_INTERVAL_MS,
-        15_000,
-      ),
-      pushTimeoutMs: parseNumber(
-        fileCfg.METRICS_PUSH_TIMEOUT_MS ?? process.env.METRICS_PUSH_TIMEOUT_MS,
-        5_000,
-      ),
-      snapshotPath: parseString(
-        fileCfg.METRICS_SNAPSHOT_PATH,
-        process.env.METRICS_SNAPSHOT_PATH || path.join(path.dirname(configPath), "metrics.snapshot.json"),
-      ),
-    },
-    features: {
-      typedContracts: parseBoolean(
-        fileCfg.FEATURE_TYPED_CONTRACTS ?? process.env.FEATURE_TYPED_CONTRACTS,
-        false,
-      ),
-      structuredLogging: parseBoolean(
-        fileCfg.FEATURE_STRUCTURED_LOGGING ?? process.env.FEATURE_STRUCTURED_LOGGING,
-        false,
-      ),
-      crossOriginIsolation: parseBoolean(
-        fileCfg.FEATURE_CROSS_ORIGIN_ISOLATION ?? process.env.FEATURE_CROSS_ORIGIN_ISOLATION,
-        false,
-      ),
-    },
-  };
-    const parsed = runtimeConfigSchema.safeParse(cached);
+    contextModelMaxRetrieval,
+    allowedMimeTypes,
+    mcpServers,
+  });
+  const parsed = runtimeConfigSchema.safeParse(cached);
   if (!parsed.success) {
-        const issues: RuntimeValidationIssue[] = parsed.error.issues.map((issue) => ({
+    const issues: RuntimeValidationIssue[] = parsed.error.issues.map((issue) => ({
       path: issue.path.join("."),
       expected: issue.message,
       received: issue.input,
@@ -941,7 +700,20 @@ function _getRuntimeConfig(): RuntimeConfig {
 /**
  * Returns whether interactive follow-up questions are enforced.
  *
+ * @remarks
+ * This helper is used by orchestration layers to decide whether the assistant
+ * should emit follow-up question blocks instead of proceeding automatically.
+ *
  * @returns `true` when interactive questioning is required by runtime policy.
+ * @throws {@link RuntimeConfigValidationError} When runtime configuration fails
+ * validation during lazy loading.
+ *
+ * @example
+ * ```ts
+ * if (isInteractiveQuestionEnforced()) {
+ *   // Render interactive options in chat UI.
+ * }
+ * ```
  */
 export function isInteractiveQuestionEnforced(): boolean {
   return getRuntimeConfig().forceInteractiveQuestions;
@@ -952,36 +724,135 @@ export function isInteractiveQuestionEnforced(): boolean {
  */
 function _resetRuntimeConfigCache(): void {
   cached = null;
+  resetRuntimeConfigIoCache();
 }
 
 /**
  * Persists selected runtime preferences to the config file and reloads cache.
  */
 function _updateRuntimeConfigFile(
-  updates: Partial<Pick<RuntimeConfigFile, "approvalMode" | "forceInteractiveQuestions" | "uploadDir">>,
+  updates: RuntimeConfigUpdates,
 ): RuntimeConfig {
   const current = _getRuntimeConfig();
-  const existing = readConfigFile(current.configPath);
-  const next: RuntimeConfigFile = {
-    ...existing,
-    ...updates,
-  };
-  fs.mkdirSync(current.homeDir, { recursive: true });
-  fs.writeFileSync(current.configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  const next = buildUpdatedRuntimeConfigFile(current, updates);
+  persistRuntimeConfigFile(current, next);
   _resetRuntimeConfigCache();
+  return _getRuntimeConfig();
+}
+
+async function _updateRuntimeConfigFileAsync(
+  updates: RuntimeConfigUpdates,
+): Promise<RuntimeConfig> {
+  const current = _getRuntimeConfig();
+  const next = buildUpdatedRuntimeConfigFile(current, updates);
+  await persistRuntimeConfigFileAsync(current, next);
+  _resetRuntimeConfigCache();
+  return _getRuntimeConfig();
+}
+
+async function _primeRuntimeConfigCache(): Promise<RuntimeConfig> {
+  const homeDir = getHomeDirectory();
+  const configPath = joinPath(homeDir, "config.json");
+  await primeRuntimeConfigText(configPath);
+  cached = null;
   return _getRuntimeConfig();
 }
 
 /**
  * RuntimeConfigManager provides a mockable interface for runtime configuration.
+ *
+ * @remarks
+ * Tests should use this object instead of directly importing wrapper functions
+ * so behavior can be replaced with deterministic fixtures.
+ *
+ * @example
+ * ```ts
+ * const config = RuntimeConfigManager.getRuntimeConfig();
+ * const updated = RuntimeConfigManager.updateRuntimeConfigFile({
+ *   forceInteractiveQuestions: false,
+ * });
+ * ```
  */
 export const RuntimeConfigManager = {
   getRuntimeConfig: _getRuntimeConfig,
   updateRuntimeConfigFile: _updateRuntimeConfigFile,
+  updateRuntimeConfigFileAsync: _updateRuntimeConfigFileAsync,
   resetRuntimeConfigCache: _resetRuntimeConfigCache,
+  primeRuntimeConfigCache: _primeRuntimeConfigCache,
 };
 
-// Backward compatibility wrappers
+/**
+ * Returns the current normalized runtime configuration.
+ *
+ * @returns Fully merged and validated runtime config.
+ * @throws {@link RuntimeConfigValidationError} When file/env inputs are invalid.
+ *
+ * @example
+ * ```ts
+ * const config = getRuntimeConfig();
+ * console.log(config.auth.frontendOrigin);
+ * ```
+ */
 export const getRuntimeConfig = () => RuntimeConfigManager.getRuntimeConfig();
+
+/**
+ * Persists selected runtime updates and returns refreshed configuration.
+ *
+ * @param updates - Partial runtime fields to update in config.json.
+ * @returns Updated runtime config after persistence and cache refresh.
+ * @throws {@link RuntimeConfigValidationError} When updated values violate
+ * runtime validation constraints.
+ *
+ * @example
+ * ```ts
+ * const next = updateRuntimeConfigFile({
+ *   forceInteractiveQuestions: true,
+ * });
+ * ```
+ */
 export const updateRuntimeConfigFile = (updates: any) => RuntimeConfigManager.updateRuntimeConfigFile(updates);
+
+/**
+ * Asynchronously persists runtime updates and returns refreshed configuration.
+ *
+ * @param updates - Partial runtime fields to update in config.json.
+ * @returns Promise resolving to updated runtime config.
+ * @throws {@link RuntimeConfigValidationError} When updated values violate
+ * runtime validation constraints.
+ *
+ * @example
+ * ```ts
+ * const next = await updateRuntimeConfigFileAsync({
+ *   forceInteractiveQuestions: false,
+ * });
+ * ```
+ */
+export const updateRuntimeConfigFileAsync = (updates: any) => RuntimeConfigManager.updateRuntimeConfigFileAsync(updates);
+
+/**
+ * Clears all runtime configuration caches.
+ *
+ * @remarks
+ * The next call to runtime getters will reread config file content and
+ * environment variables.
+ *
+ * @example
+ * ```ts
+ * resetRuntimeConfigCache();
+ * const fresh = getRuntimeConfig();
+ * ```
+ */
 export const resetRuntimeConfigCache = () => RuntimeConfigManager.resetRuntimeConfigCache();
+
+/**
+ * Preloads runtime config file text and refreshes the runtime cache.
+ *
+ * @returns Promise resolving to fresh runtime config.
+ * @throws {@link RuntimeConfigValidationError} When loaded values are invalid.
+ *
+ * @example
+ * ```ts
+ * const config = await primeRuntimeConfigCache();
+ * ```
+ */
+export const primeRuntimeConfigCache = () => RuntimeConfigManager.primeRuntimeConfigCache();

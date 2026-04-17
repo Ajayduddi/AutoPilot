@@ -1,5 +1,9 @@
+/**
+ * @fileoverview Contract tests for shared chat block helpers and envelope
+ * shape guarantees used by backend/frontend rendering paths.
+ */
 import { describe, expect, it } from "bun:test";
-import { isChatBlocksEnvelope } from "@autopilot/shared";
+import { formatCommonAnswerMarkdown, isChatBlocksEnvelope } from "@autopilot/shared";
 
 describe("chat block contract baseline", () => {
   it("accepts direct chat response block sequence", () => {
@@ -129,5 +133,47 @@ describe("chat block contract baseline", () => {
       ],
     } as any;
     expect(isChatBlocksEnvelope(badEnvelope)).toBe(false);
+  });
+
+  it("preserves block contract and non-markdown block types when formatting markdown text", () => {
+    const envelope = {
+      blocks: [
+        { type: "summary", items: ["Main agent handled this as a direct chat response (no subagent execution)."] },
+        {
+          type: "markdown",
+          text: [
+            "Profile Rating: 9.2/10",
+            "Key Strengths (9.2/10)",
+            "✅ Technical Depth (9.5/10) - Strong React and backend experience.",
+            "Areas for Improvement (8/10)",
+            "🔹 Open-Source Contributions - Limited public activity.",
+          ].join("\n"),
+        },
+        {
+          type: "question_mcq",
+          questionId: "q_1",
+          prompt: "Choose how you want to continue:",
+          options: [
+            { id: "resume", label: "Resume tweak", valueToSend: "resume tweak" },
+            { id: "linkedin", label: "LinkedIn optimization tip", valueToSend: "linkedin optimization tip" },
+          ],
+        },
+        { type: "source", origin: "Interactive Question", metadata: ["answerMode: interactive_question"] },
+      ],
+    };
+
+    const formattedEnvelope = {
+      blocks: envelope.blocks.map((block) =>
+        block.type === "markdown"
+          ? { ...block, text: formatCommonAnswerMarkdown(block.text) }
+          : block,
+      ),
+    };
+
+    expect(isChatBlocksEnvelope(formattedEnvelope)).toBe(true);
+    expect(formattedEnvelope.blocks[0]?.type).toBe("summary");
+    expect(formattedEnvelope.blocks[2]?.type).toBe("question_mcq");
+    expect(formattedEnvelope.blocks[3]?.type).toBe("source");
+    expect((formattedEnvelope.blocks[1] as any).text).toContain("Profile Rating: 9.2/10\n\nKey Strengths (9.2/10)");
   });
 });

@@ -1,5 +1,30 @@
+/**
+ * @fileoverview apps/frontend/src/context/auth.context.tsx
+ *
+ * High-level purpose:
+ * Frontend context module that provides shared client state and actions across multiple screens.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Centralizes cross-route state with typed provider boundaries.
+ * - Reduces prop drilling for session, panel, and notification state.
+ * - Improves consistency of state transitions in complex UI flows.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Wrap consuming trees with the exported provider component.
+ * 2. Consume context values through typed hooks or context accessors.
+ * 3. Keep side effects scoped and validated via related tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { ParentComponent, createContext, createResource, createSignal, useContext } from "solid-js";
 import { authApi, type AuthStatePayload } from "../lib/api";
+import { reportRuntimeWarn } from "../lib/runtime-reporter";
 
 /**
   * auth context value type alias.
@@ -8,7 +33,8 @@ type AuthContextValue = {
   state: () => AuthStatePayload | undefined;
   loading: () => boolean;
   refresh: () => Promise<AuthStatePayload | undefined>;
-  login: (payload: { email: string; password: string }) => Promise<void>;
+  login: (payload: { email: string; password: string }) => Promise<{ mfaRequired: boolean; method?: "totp" }>;
+  verifyTotp: (payload: { code: string }) => Promise<void>;
   registerOnboarding: (payload: { email: string; name?: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
   googleStartUrl: () => string;
@@ -24,7 +50,7 @@ export const AuthProvider: ParentComponent = (props) => {
     } catch (err) {
       // Transient failures (e.g. during OAuth redirect) should not crash the app.
       // Return login mode so the user sees the login page and can retry.
-      console.warn("[auth] session check failed, falling back to login:", err);
+      reportRuntimeWarn("[auth] session check failed, falling back to login:", err);
       return { mode: "login" as const, oauth: { google: true } } as AuthStatePayload;
     }
   });
@@ -65,7 +91,17 @@ export const AuthProvider: ParentComponent = (props) => {
    */
   async function login(payload: { email: string; password: string }) {
     setAuthError("");
-    await authApi.login(payload);
+    const result = await authApi.login(payload);
+    await refresh();
+    return {
+      mfaRequired: Boolean(result.data?.mfaRequired),
+      method: result.data?.method,
+    };
+  }
+
+  async function verifyTotp(payload: { code: string }) {
+    setAuthError("");
+    await authApi.verifyTotp(payload);
     await refresh();
   }
 
@@ -117,6 +153,7 @@ export const AuthProvider: ParentComponent = (props) => {
         loading: () => state.loading,
         refresh,
         login,
+        verifyTotp,
         registerOnboarding,
         logout,
         googleStartUrl: () => authApi.googleStartUrl(),

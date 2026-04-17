@@ -1,16 +1,31 @@
 /**
  * @fileoverview routes/webhooks.routes.
  *
- * HTTP endpoints, request validation, and response composition for API resources.
+ * High-level purpose:
+ * HTTP route surface that validates requests and delegates business logic to services.
+ *
+ * Key Features (and trade-offs):
+ * - Schema-driven request validation and response normalization.
+ * - Auth/rate-limit aware route composition for API boundaries.
+ * - Thin handlers that preserve routes -> services -> repositories layering.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Add new endpoints by pairing route handlers with schemas.
+ * 3. Delegate business decisions to service layer components.
+ * 4. Verify contract changes with API and route tests.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import { Router } from 'express';
 import { requireWebhookSecret } from '../middleware/webhook.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { n8nCallbackSchema, unifiedCallbackSchema } from '../schemas/webhook.schema';
-import { WorkflowService } from '../services/workflow.service';
+import { WorkflowService } from '../services/workflow/workflow.service';
 import { ChatService } from '../services/chat.service';
-import { NotificationService } from '../services/notification.service';
-import { WorkflowSummaryService } from '../services/workflow-summary.service';
+import { NotificationService } from '../services/notifications/notification.service';
+import { WorkflowSummaryService } from '../services/workflow/workflow-summary.service';
 import { rateLimit } from '../middleware/rate-limit.middleware';
 
 const router = Router();

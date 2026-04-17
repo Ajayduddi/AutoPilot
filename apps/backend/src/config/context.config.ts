@@ -1,7 +1,22 @@
 /**
  * @fileoverview config/context.config.
  *
- * Runtime configuration loading, validation, and feature/runtime tuning controls.
+ * High-level purpose:
+ * Runtime configuration contracts, loading, and normalization for backend execution.
+ *
+ * Key Features (and trade-offs):
+ * - Validates and shapes environment/runtime config values.
+ * - Provides typed accessors for production-safe settings.
+ * - Supports deterministic configuration behavior across environments.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Add new settings in centralized config contracts.
+ * 3. Avoid scattering env access outside config modules.
+ * 4. Typecheck and config tests should validate changes.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 // ─────────────────────────────────────────────────────────────
 //  Context Mode — Configuration
@@ -33,7 +48,58 @@
 // ─────────────────────────────────────────────────────────────
 import { getRuntimeConfig } from './runtime.config';
 
-const runtime = getRuntimeConfig();
+type ContextConfig = {
+  enabled: boolean;
+  debug: boolean;
+  maxRetrieval: number;
+  modelMaxRetrieval: Record<string, number>;
+  contentMaxLength: number;
+  summaryMaxLength: number;
+  targetWindowTokens: number;
+  historyBudgetTokens: number;
+  retrievedContextBudgetTokens: number;
+  maxMessageTokens: number;
+  maxContextItemTokens: number;
+  cacheDataBudgetTokens: number;
+  index: {
+    workflowRuns: boolean;
+    decisions: boolean;
+    threadState: boolean;
+  };
+  ttlDays: number;
+  cache: {
+    enabled: boolean;
+    staleMins: number;
+  };
+};
+
+function getContextModeConfig(): ContextConfig {
+  const runtime = getRuntimeConfig();
+  return {
+    enabled: runtime.contextMode.enabled,
+    debug: runtime.contextMode.debug,
+    maxRetrieval: runtime.contextMode.maxRetrieval,
+    modelMaxRetrieval: runtime.contextMode.modelMaxRetrieval,
+    contentMaxLength: runtime.contextMode.contentMaxLength,
+    summaryMaxLength: runtime.contextMode.summaryMaxLength,
+    targetWindowTokens: runtime.contextMode.targetWindowTokens,
+    historyBudgetTokens: runtime.contextMode.historyBudgetTokens,
+    retrievedContextBudgetTokens: runtime.contextMode.retrievedContextBudgetTokens,
+    maxMessageTokens: runtime.contextMode.maxMessageTokens,
+    maxContextItemTokens: runtime.contextMode.maxContextItemTokens,
+    cacheDataBudgetTokens: runtime.contextMode.cacheDataBudgetTokens,
+    index: {
+      workflowRuns: runtime.contextMode.index.workflowRuns,
+      decisions: runtime.contextMode.index.decisions,
+      threadState: runtime.contextMode.index.threadState,
+    },
+    ttlDays: runtime.contextMode.ttlDays,
+    cache: {
+      enabled: runtime.contextMode.cache.enabled,
+      staleMins: runtime.contextMode.cache.staleMins,
+    },
+  };
+}
 
 /**
  * Materialized context-mode configuration derived from runtime config.
@@ -49,61 +115,66 @@ const runtime = getRuntimeConfig();
  * }
  * ```
  */
-export const contextConfig = {
-  /** Master toggle — when false, all indexing/retrieval is skipped */
-  enabled: runtime.contextMode.enabled,
-
-  /** Enable verbose debug logging for context operations */
-  debug: runtime.contextMode.debug,
-
-  /** Maximum number of context items returned per retrieval call */
-  maxRetrieval: runtime.contextMode.maxRetrieval,
-
-  /** Optional model-specific override map for max retrieval */
-  modelMaxRetrieval: runtime.contextMode.modelMaxRetrieval,
-
-  /** Maximum characters stored in the `content` field of a context item */
-  contentMaxLength: runtime.contextMode.contentMaxLength,
-
-  /** Maximum characters stored in the `summary` field */
-  summaryMaxLength: runtime.contextMode.summaryMaxLength,
-
-  /** Target long-context assembly budget */
-  targetWindowTokens: runtime.contextMode.targetWindowTokens,
-
-  /** Budget allocated to conversation history */
-  historyBudgetTokens: runtime.contextMode.historyBudgetTokens,
-
-  /** Budget allocated to retrieved context memory */
-  retrievedContextBudgetTokens: runtime.contextMode.retrievedContextBudgetTokens,
-
-  /** Maximum tokens retained from a single message */
-  maxMessageTokens: runtime.contextMode.maxMessageTokens,
-
-  /** Maximum tokens retained from a single context item */
-  maxContextItemTokens: runtime.contextMode.maxContextItemTokens,
-
-  /** Maximum tokens retained from cached workflow/result payloads */
-  cacheDataBudgetTokens: runtime.contextMode.cacheDataBudgetTokens,
-
-  /** Per-category indexing toggles */
+export const contextConfig: ContextConfig = {
+  get enabled() {
+    return getRuntimeConfig().contextMode.enabled;
+  },
+  get debug() {
+    return getRuntimeConfig().contextMode.debug;
+  },
+  get maxRetrieval() {
+    return getRuntimeConfig().contextMode.maxRetrieval;
+  },
+  get modelMaxRetrieval() {
+    return getRuntimeConfig().contextMode.modelMaxRetrieval;
+  },
+  get contentMaxLength() {
+    return getRuntimeConfig().contextMode.contentMaxLength;
+  },
+  get summaryMaxLength() {
+    return getRuntimeConfig().contextMode.summaryMaxLength;
+  },
+  get targetWindowTokens() {
+    return getRuntimeConfig().contextMode.targetWindowTokens;
+  },
+  get historyBudgetTokens() {
+    return getRuntimeConfig().contextMode.historyBudgetTokens;
+  },
+  get retrievedContextBudgetTokens() {
+    return getRuntimeConfig().contextMode.retrievedContextBudgetTokens;
+  },
+  get maxMessageTokens() {
+    return getRuntimeConfig().contextMode.maxMessageTokens;
+  },
+  get maxContextItemTokens() {
+    return getRuntimeConfig().contextMode.maxContextItemTokens;
+  },
+  get cacheDataBudgetTokens() {
+    return getRuntimeConfig().contextMode.cacheDataBudgetTokens;
+  },
   index: {
-    workflowRuns: runtime.contextMode.index.workflowRuns,
-    decisions: runtime.contextMode.index.decisions,
-    threadState: runtime.contextMode.index.threadState,
+    get workflowRuns() {
+      return getRuntimeConfig().contextMode.index.workflowRuns;
+    },
+    get decisions() {
+      return getRuntimeConfig().contextMode.index.decisions;
+    },
+    get threadState() {
+      return getRuntimeConfig().contextMode.index.threadState;
+    },
   },
-
-  /** Auto-expire context items after this many days (0 = never expire) */
-  ttlDays: runtime.contextMode.ttlDays,
-
-  /** Context-aware decisioning — answer from cached workflow results */
+  get ttlDays() {
+    return getRuntimeConfig().contextMode.ttlDays;
+  },
   cache: {
-    /** Enable answering from cached workflow data instead of re-triggering */
-    enabled: runtime.contextMode.cache.enabled,
-    /** Max age in minutes for a cached workflow result to be considered fresh */
-    staleMins: runtime.contextMode.cache.staleMins,
+    get enabled() {
+      return getRuntimeConfig().contextMode.cache.enabled;
+    },
+    get staleMins() {
+      return getRuntimeConfig().contextMode.cache.staleMins;
+    },
   },
-} as const;
+};
 
 /**
  * Resolves model-specific retrieval limits with exact, prefix, and wildcard matching.
@@ -120,23 +191,24 @@ export const contextConfig = {
  * ```
  */
 export function getContextMaxRetrievalForModel(model?: string): number {
-  const fallback = contextConfig.maxRetrieval;
+  const cfg = getContextModeConfig();
+  const fallback = cfg.maxRetrieval;
   if (!model) return fallback;
 
   const normalized = model.trim().toLowerCase();
   if (!normalized) return fallback;
 
   // 1) Exact match
-  const exact = contextConfig.modelMaxRetrieval[normalized];
+  const exact = cfg.modelMaxRetrieval[normalized];
   if (typeof exact === 'number') return exact;
 
   // 2) Prefix match (e.g. "gpt-4o" matches "gpt-4o-mini")
-  for (const [key, value] of Object.entries(contextConfig.modelMaxRetrieval)) {
+  for (const [key, value] of Object.entries(cfg.modelMaxRetrieval)) {
     if (normalized.startsWith(key)) return value;
   }
 
   // 3) Wildcard fallback, if provided
-  const wildcard = contextConfig.modelMaxRetrieval['*'];
+  const wildcard = cfg.modelMaxRetrieval['*'];
   if (typeof wildcard === 'number') return wildcard;
 
   return fallback;
@@ -145,4 +217,8 @@ export function getContextMaxRetrievalForModel(model?: string): number {
 /**
  * Strongly typed shape of {@link contextConfig}.
  */
-export type ContextConfig = typeof contextConfig;
+export function getContextConfig(): ContextConfig {
+  return getContextModeConfig();
+}
+
+export type { ContextConfig };

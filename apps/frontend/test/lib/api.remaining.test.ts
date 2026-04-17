@@ -1,3 +1,27 @@
+/**
+ * @fileoverview Regression tests for remaining API client behaviors and
+ *
+ * High-level purpose:
+ * Frontend test module for unit/integration verification of UI behavior, helpers, and route-level logic.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Validates deterministic behavior of components and utilities.
+ * - Captures edge cases and contract expectations in test fixtures.
+ * - Improves safety for refactors through focused assertions.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import module under test and assemble required test doubles.
+ * 2. Write assertions for nominal, boundary, and failure paths.
+ * 3. Run targeted tests to verify intended behavior.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   approvalsApi,
@@ -17,6 +41,9 @@ type FetchCall = {
 
 let fetchCalls: FetchCall[] = [];
 
+/**
+ * Creates a JSON response object with the provided payload and status.
+ */
 function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
     status,
@@ -123,7 +150,6 @@ describe("api remaining wrappers", () => {
       provider: "ollama",
       providerId: "p_1",
       baseUrl: "http://localhost:11434",
-      apiKey: "sk-local",
     });
     await settingsApi.getWebhookSecrets();
     await approvalsApi.getPending();
@@ -139,7 +165,6 @@ describe("api remaining wrappers", () => {
       provider: "ollama",
       providerId: "p_1",
       baseUrl: "http://localhost:11434",
-      apiKey: "sk-local",
     });
     expect(String(fetchCalls[4]?.input)).toContain("/api/settings/webhook-secrets");
     expect(String(fetchCalls[5]?.input)).toContain("/api/approvals");

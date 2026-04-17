@@ -1,3 +1,27 @@
+/**
+ * @fileoverview Notification preview panel for quick inspection of event
+ *
+ * High-level purpose:
+ * Reusable frontend presentation module for rendering chat, settings, and UI primitives across routes.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates reusable UI logic behind typed component contracts.
+ * - Supports composable view patterns with minimal route coupling.
+ * - Balances readability and flexibility for evolving product surfaces.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import the component into route or parent composition layers.
+ * 2. Pass required typed props and wire callbacks to domain actions.
+ * 3. Confirm visual and interaction behavior with component tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { For, Show, createResource, createSignal } from "solid-js";
 import { Button } from "../ui/Button";
 import { workflowsApi } from "../../lib/api";
@@ -5,9 +29,6 @@ import { usePanel } from "../../context/panel.context";
 import type { InboxNotification } from "../../context/notifications.context";
 import { getNotificationDisplayTitle, getWorkflowInsight } from "../../lib/notification-insights";
 
-/**
- * Interface describing notification preview panel props shape.
- */
 interface NotificationPreviewPanelProps {
   notification: InboxNotification;
   onOpenWorkflow?: (workflowId: string) => void;
@@ -43,19 +64,7 @@ const runStatusConfig: Record<string, { label: string; pill: string; dot: string
 };
 
 /**
- * Utility function to format date time.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @param value - Input value for formatDateTime.
- * @returns Return value from formatDateTime.
- *
- * @example
- * ```typescript
- * const output = formatDateTime(value);
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
+ * Formats date-time values for panel display.
  */
 function formatDateTime(value?: string | null) {
   if (!value) return "Not available";
@@ -63,19 +72,7 @@ function formatDateTime(value?: string | null) {
 }
 
 /**
- * Utility function to format duration.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @param value - Input value for formatDuration.
- * @returns Return value from formatDuration.
- *
- * @example
- * ```typescript
- * const output = formatDuration(value);
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
+ * Converts duration milliseconds into compact human-readable strings.
  */
 function formatDuration(value?: number | null) {
   if (value === null || value === undefined) return "Not available";
@@ -85,19 +82,8 @@ function formatDuration(value?: number | null) {
 }
 
 /**
- * Utility function to notification preview panel.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @param props - Input value for NotificationPreviewPanel.
- * @returns Return value from NotificationPreviewPanel.
- *
- * @example
- * ```typescript
- * const output = NotificationPreviewPanel(value);
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
+ * Detailed notification preview with run details, AI insight, and follow-up
+ * action affordances.
  */
 export function NotificationPreviewPanel(props: NotificationPreviewPanelProps) {
   const { closePanel } = usePanel();

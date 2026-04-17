@@ -1,14 +1,40 @@
+/**
+ * @fileoverview apps/frontend/src/routes/index.tsx
+ *
+ * High-level purpose:
+ * Frontend route module that composes page-level UI, data loading, and user flows for navigation states.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates route-scoped layout and state transitions.
+ * - Coordinates API interactions with route-specific rendering behavior.
+ * - Supports responsive UX patterns for authenticated and guest flows.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Create or update route component exports for target navigation path.
+ * 2. Connect route logic to frontend API helpers and shared context providers.
+ * 3. Validate route behavior on desktop and mobile with route/e2e tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { Title } from "@solidjs/meta";
 import { createResource, createSignal, createEffect, createMemo, For, Show, onCleanup } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import type { ChatAttachmentDto } from "@autopilot/shared";
 import { MessageBubble } from "../components/chat/MessageBubble";
 import { DetailPanel } from "../components/chat/DetailPanel";
+import { MemoryInsightsPanel } from "../components/chat/MemoryInsightsPanel";
 import { usePanel } from "../context/panel.context";
 import { useMobileMenu } from "../context/mobile-menu.context";
 import { approvalsApi, chatApi, settingsApi, workflowsApi } from "../lib/api";
+import { reportRuntimeError } from "../lib/runtime-reporter";
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
-import type { ActionItem, AssistantBlock, MessageState, TaskCardBlock, WorkflowStatus, WorkflowStatusBlock } from "../components/chat/types";
+import type { ActionItem, AssistantBlock, MessageState, TaskCardBlock, WorkflowStatusBlock } from "../components/chat/types";
 import {
   coerceWorkflowStatus,
   fallbackAssistantBlocks,
@@ -45,28 +71,16 @@ export function ChatPage(props: ChatPageProps = {}) {
   const [allWorkflows] = createResource(() => workflowsApi.getAll({ archived: "false" }));
 
 
-  // Aggregate all models from all endpoints
   const [aggregatedModels] = createResource(providers, async (provs) => {
-    if (!provs) return [];
+    if (!provs || provs.length === 0) return [];
 
-    // Fallback: If no providers configured, try fetching local Ollama
-    let targetProvs = provs;
-    if (provs.length === 0) {
-      targetProvs = [{
-        id: 'default-local',
-        provider: 'ollama',
-        baseUrl: 'http://localhost:11434',
-        isDefault: true
-      }];
-    }
     const results = await Promise.all(
-      targetProvs.map(async (p: any) => {
+      provs.map(async (p: any) => {
         try {
           const models = await settingsApi.fetchModels({
             provider: p.provider,
             providerId: p.id,
             baseUrl: p.baseUrl,
-            apiKey: p.apiKey
           });
           return models.map((m: string) => ({
             providerId: p.id,
@@ -74,7 +88,7 @@ export function ChatPage(props: ChatPageProps = {}) {
             modelName: m
           }));
         } catch (e) {
-          console.error(`Failed to fetch models for ${p.provider}`, e);
+          reportRuntimeError(`Failed to fetch models for ${p.provider}`, e);
           return [];
         }
       })
@@ -84,6 +98,12 @@ export function ChatPage(props: ChatPageProps = {}) {
 
   const [activeThreadId, setActiveThreadId] = createSignal<string | null>(props.threadId ?? null);
   const [loadedThreadId, setLoadedThreadId] = createSignal<string | null>(null);
+  const [activeThreadMemoryOverview] = createResource(
+    activeThreadId,
+    (threadId) => threadId
+      ? chatApi.getThreadMemoryInsightsEnvelope(threadId, { limit: 1, groupBy: "category" })
+      : Promise.resolve({ data: [], meta: undefined }),
+  );
   const navigate = useNavigate();
   const params = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -123,6 +143,7 @@ export function ChatPage(props: ChatPageProps = {}) {
   const [pendingFiles, setPendingFiles] = createSignal<File[]>([]);
   const [uploadingAttachments, setUploadingAttachments] = createSignal(false);
   const [composerError, setComposerError] = createSignal("");
+  const activeThreadMemoryCount = createMemo(() => activeThreadMemoryOverview()?.meta?.total || 0);
   const composerHints = ["Add task...", "Run workflow...", "Check emails..."];
   const [placeholderHintIndex, setPlaceholderHintIndex] = createSignal(0);
   let feedRef: HTMLDivElement | undefined;
@@ -332,6 +353,17 @@ export function ChatPage(props: ChatPageProps = {}) {
       ),
     });
   };
+  const openMemoryInsights = () => {
+    const threadId = activeThreadId();
+    if (!threadId) return;
+    openMemoryInsightsForThread(threadId);
+  };
+  const openMemoryInsightsForThread = (threadId: string) => {
+    openPanel({
+      title: "Memory Insights",
+      content: <MemoryInsightsPanel threadId={threadId} />,
+    });
+  };
   const openWorkflowDetails = async (block: WorkflowStatusBlock) => {
     // Fetch fresh run data from the API for accurate details
     const runId = block.workflow.runId;
@@ -444,7 +476,7 @@ export function ChatPage(props: ChatPageProps = {}) {
           const status = action.id.startsWith("approve:") ? "approved" : "rejected";
           await approvalsApi.resolve(approvalId, status);
         } catch (err) {
-          console.error("Failed to resolve approval action:", err);
+          reportRuntimeError("Failed to resolve approval action:", err);
         }
       }
       return;
@@ -552,7 +584,7 @@ export function ChatPage(props: ChatPageProps = {}) {
           await workflowsApi.trigger(action.entityId, { source: "ui", input: {} });
         }
       } catch (e: any) {
-        console.error("Retry failed:", e);
+        reportRuntimeError("Retry failed:", e);
       }
     } else if (action.id === "open-workflow") {
       openPanel({
@@ -717,7 +749,7 @@ export function ChatPage(props: ChatPageProps = {}) {
         navigate("/", { replace: false });
         return;
       }
-      console.error("Failed to load thread messages", e);
+      reportRuntimeError("Failed to load thread messages", e);
       setLoadedThreadId(null);
       setComposerError("Failed to load this thread.");
     }
@@ -761,24 +793,15 @@ export function ChatPage(props: ChatPageProps = {}) {
 
   createEffect(() => {
     const draft = typeof searchParams.draft === "string" ? searchParams.draft : "";
-    const autoSend = searchParams.autosend === "1";
     if (!draft.trim()) return;
     const draftKey = `${params.id || "root"}::${draft}`;
     if (lastDraftKey() === draftKey) return;
 
+    // Security: only populate input — never auto-send from URL params.
+    // Auto-sending from URL params was a CSRF-like vector where crafted links
+    // could trigger workflows or send messages on the user's behalf.
     setInput(draft);
     setLastDraftKey(draftKey);
-
-    if (autoSend) {
-      const autoSendKey = `${draftKey}::autosend`;
-      if (lastAutoSendKey() !== autoSendKey) {
-        setLastAutoSendKey(autoSendKey);
-        // Let the route/thread mount settle before starting the stream send.
-        window.setTimeout(() => {
-          sendMessage(draft);
-        }, 20);
-      }
-    }
 
     setSearchParams({ draft: undefined, autosend: undefined }, { replace: true });
   });
@@ -1118,7 +1141,7 @@ export function ChatPage(props: ChatPageProps = {}) {
       await chatApi.renameThread(threadId, title);
       await refetchThreads();
     } catch (e) {
-      console.error("Failed to rename thread", e);
+      reportRuntimeError("Failed to rename thread", e);
     }
   }
 
@@ -1147,7 +1170,7 @@ export function ChatPage(props: ChatPageProps = {}) {
       await chatApi.deleteThread(threadId);
       await refetchThreads();
     } catch (e) {
-      console.error("Failed to delete thread", e);
+      reportRuntimeError("Failed to delete thread", e);
     }
   }
 
@@ -1178,7 +1201,7 @@ export function ChatPage(props: ChatPageProps = {}) {
         setIsBurning(false);
       }, 800);
     } catch (e) {
-      console.error("Failed to clear all threads", e);
+      reportRuntimeError("Failed to clear all threads", e);
       setIsBurning(false);
     }
   }
@@ -1422,6 +1445,18 @@ export function ChatPage(props: ChatPageProps = {}) {
                         </button>
                         <Show when={menuOpenId() === thread.id}>
                           <div class="absolute right-0 top-7 z-50 w-36 bg-[#1a1a1a] border border-neutral-800/60 rounded-xl shadow-2xl shadow-black/60 py-1 text-xs animate-fade-in">
+                            <button
+                              class="w-full text-left px-3 py-2 text-neutral-400 hover:bg-white/5 hover:text-white transition-all duration-150 flex items-center gap-2"
+                              onClick={(e) => { e.stopPropagation(); openMemoryInsightsForThread(thread.id); setMenuOpenId(null); }}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l2.5 2.5" /><path d="M21 12a9 9 0 1 1-9-9" /></svg>
+                              Memory
+                              <Show when={activeThreadId() === thread.id && activeThreadMemoryCount() > 0}>
+                                <span class="ml-auto rounded-full bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-300">
+                                  {activeThreadMemoryCount()}
+                                </span>
+                              </Show>
+                            </button>
                             <button
                               class="w-full text-left px-3 py-2 text-neutral-400 hover:bg-white/5 hover:text-white transition-all duration-150 flex items-center gap-2"
                               onClick={(e) => { e.stopPropagation(); setRenameValue(thread.title); setEditingThreadId(thread.id); setMenuOpenId(null); }}
@@ -1748,6 +1783,25 @@ export function ChatPage(props: ChatPageProps = {}) {
 
             {/* Col 3 (mobile) / right group (desktop): customize button */}
             <div class="flex items-center gap-2 justify-end">
+              <Show when={activeThreadId()}>
+                <button
+                  onClick={openMemoryInsights}
+                  class="relative overflow-visible w-9 h-9 rounded-xl bg-[#1e1e1e] border border-neutral-700/60 shadow-[0_2px_12px_rgba(0,0,0,0.3)] text-neutral-300 hover:text-white hover:border-neutral-500/70 hover:bg-[#242424] md:rounded-lg md:border-neutral-800/70 md:bg-neutral-900/70 md:text-neutral-400 md:shadow-none md:hover:text-neutral-100 md:hover:border-neutral-600 md:hover:bg-neutral-800/80 transition-all duration-200 flex items-center justify-center"
+                  title="Open memory insights"
+                  aria-label="Open memory insights"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 18.5a6.5 6.5 0 1 0-6.5-6.5" />
+                    <path d="M12 18.5a6.5 6.5 0 1 1 6.5-6.5" />
+                    <path d="M12 8v4l2.5 2.5" />
+                  </svg>
+                  <Show when={activeThreadMemoryCount() > 0}>
+                    <span class="absolute -top-2 -right-2 md:-top-1.5 md:-right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-[10px] font-semibold text-white flex items-center justify-center border border-[#111111] shadow-[0_2px_10px_rgba(79,70,229,0.35)]">
+                      {activeThreadMemoryCount() > 9 ? "9+" : activeThreadMemoryCount()}
+                    </span>
+                  </Show>
+                </button>
+              </Show>
               <button
                 onClick={() => setIsCustomizePanelOpen(true)}
                 class="w-9 h-9 rounded-xl bg-[#1e1e1e] border border-neutral-700/60 shadow-[0_2px_12px_rgba(0,0,0,0.3)] text-neutral-300 hover:text-white hover:border-neutral-500/70 hover:bg-[#242424] md:rounded-lg md:border-neutral-800/70 md:bg-neutral-900/70 md:text-neutral-400 md:shadow-none md:hover:text-neutral-100 md:hover:border-neutral-600 md:hover:bg-neutral-800/80 transition-all duration-200 flex items-center justify-center"
@@ -1776,6 +1830,9 @@ export function ChatPage(props: ChatPageProps = {}) {
             <div
               ref={feedRef}
               onScroll={updateScrollToBottomVisibility}
+              role="log"
+              aria-live="polite"
+              aria-label="Chat messages"
               class={`overflow-y-auto scroll-smooth ${(messages().length === 0 && !streamMsg.active) ? "hidden" : "flex-1 pb-2"}`}
               style={chatScaleStyle()}
             >
@@ -1833,7 +1890,7 @@ export function ChatPage(props: ChatPageProps = {}) {
                   </div>
                   <span class="text-[24px] font-bold text-neutral-100 tracking-tight">AutoPilot</span>
                 </div>
-                <h2 class="text-[26px] font-semibold text-neutral-300 tracking-tight">What can I automate for you?</h2>
+                <h2 class="text-[22px] md:text-[26px] font-semibold text-neutral-300 tracking-tight">What can I automate for you?</h2>
               </div>
             </Show>
 
@@ -2071,7 +2128,7 @@ export function ChatPage(props: ChatPageProps = {}) {
                     </div>
                   </Show>
 
-                  <p class="text-center text-[12px] text-neutral-500 mt-3 tracking-wide">AI agents can make mistakes. Always verify sensitive actions.</p>
+                  <p class="text-center text-[10px] md:text-[12px] text-neutral-500 mt-3 tracking-wide">AI agents can make mistakes. Always verify sensitive actions.</p>
                 </div>
               </div>
             </div>

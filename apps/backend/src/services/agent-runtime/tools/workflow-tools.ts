@@ -1,11 +1,26 @@
 /**
  * @fileoverview services/agent-runtime/tools/workflow-tools.
  *
- * Domain and orchestration logic that coordinates repositories, providers, and policy rules.
+ * High-level purpose:
+ * Application/business orchestration services for domain workflows and integrations.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates domain logic behind testable service APIs.
+ * - Coordinates provider calls, repository access, and policy checks.
+ * - Provides reusable units consumed by routes and background flows.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Keep side effects localized and explicit in service methods.
+ * 3. Prefer dependency reuse over duplicating orchestration logic.
+ * 4. Validate behavior with targeted service tests.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import { z } from "zod";
 import { createTool } from "@mastra/core/tools";
-import { WorkflowService } from "../../workflow.service";
+import { WorkflowService } from "../../workflow/workflow.service";
 import type { AgentToolMap, AgentToolRuntimeContext } from "../types";
 import {
   createApprovalGateRunShared,
@@ -15,10 +30,6 @@ import {
 } from "../workflow-execution.service";
 
 const jsonRecordSchema = z.record(z.string(), z.unknown()).default({});
-
-function trimString(value: unknown): string {
-  return String(value || "").trim();
-}
 
 function isTerminalWorkflowStatus(status: unknown): boolean {
     const value = String(status || "").trim().toLowerCase();

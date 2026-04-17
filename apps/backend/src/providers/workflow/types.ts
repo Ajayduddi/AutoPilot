@@ -1,7 +1,26 @@
 /**
  * @fileoverview providers/workflow/types.
  *
- * External provider adapters and interfaces for LLMs and workflow engines.
+ * High-level purpose:
+ * Shared type primitives for workflow-node operations, metadata payloads, and
+ * adapter utility contracts.
+ * Business value: keeps provider implementations and services aligned on
+ * operation shapes with strong compile-time guarantees.
+ * System impact: type foundation consumed across workflow adapters and tests.
+ *
+ * Key Features (and trade-offs):
+ * - Reusable operation result/type aliases for adapter implementations.
+ * - Consistent metadata shape for execution tracing.
+ * - Lightweight contracts for node CRUD/update helper flows.
+ * - Supports extension with additive fields for new provider needs.
+ * - Trade-off: broad shared types can drift if not governed by contract tests.
+ *
+ * Usage Guide:
+ * 1. Import these types in provider adapters and services.
+ * 2. Keep additive changes backward compatible for existing consumers.
+ * 3. Update related shared interfaces when introducing new operation fields.
+ * 4. Mirror type changes in adapter and orchestrator tests.
+ * 5. Prefer explicit type aliases over `any` for provider payload handling.
  */
 import type { NormalizedResult, WorkflowRunStatus } from '@autopilot/shared';
 

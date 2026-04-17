@@ -1,28 +1,51 @@
 /**
  * @fileoverview repositories/webhook-secret.repo.
  *
- * Persistence helpers for webhook secret lifecycle and verification.
+ * High-level purpose:
+ * Data access repository layer for persistence operations and query composition.
+ *
+ * Key Features (and trade-offs):
+ * - Typed CRUD/query helpers over Drizzle and database schema.
+ * - Centralized data filtering, sorting, and pagination primitives.
+ * - Keeps SQL/ORM concerns isolated from route and service layers.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Use repositories from services only, not directly from routes.
+ * 3. Keep repository methods deterministic and side-effect scoped.
+ * 4. Run database-related tests when query behavior changes.
+ * 5. Keep documentation aligned with behavior and tests.
  */
-import crypto from 'crypto';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { db } from '../db';
 import { webhookSecrets } from '../db/schema';
 
 /** Prefix attached to generated plaintext webhook secrets. */
 const WEBHOOK_SECRET_PREFIX = 'whsec_';
+const encoder = new TextEncoder();
+
+function base64UrlEncode(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
 
 /**
  * Computes a stable SHA-256 hex digest for secret comparison/storage.
  */
-export function hashWebhookSecret(secret: string): string {
-  return crypto.createHash('sha256').update(secret).digest('hex');
+export async function hashWebhookSecret(secret: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(secret));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /**
  * Generates a new prefixed webhook secret value.
  */
 function generateWebhookSecretValue(): string {
-  const token = crypto.randomBytes(24).toString('base64url');
+  const token = base64UrlEncode(crypto.getRandomValues(new Uint8Array(24)));
   return `${WEBHOOK_SECRET_PREFIX}${token}`;
 }
 
@@ -59,7 +82,7 @@ export const WebhookSecretRepo = {
       id: `whk_${crypto.randomUUID()}`,
       label: input.label,
       secretPrefix: getSecretPrefix(secret),
-      secretHash: hashWebhookSecret(secret),
+      secretHash: await hashWebhookSecret(secret),
       createdByUserId: input.createdByUserId ?? null,
     }).returning();
     return { created, secret };
@@ -76,7 +99,7 @@ export const WebhookSecretRepo = {
 
   /** Finds an active secret row matching the provided plaintext secret. */
   async findActiveSecretByPlaintext(secret: string) {
-    const secretHash = hashWebhookSecret(secret);
+    const secretHash = await hashWebhookSecret(secret);
     return db.query.webhookSecrets.findFirst({
       where: and(eq(webhookSecrets.secretHash, secretHash), isNull(webhookSecrets.revokedAt)),
     });

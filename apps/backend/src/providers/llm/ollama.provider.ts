@@ -1,7 +1,28 @@
 /**
  * @fileoverview providers/llm/ollama.provider.
  *
- * External provider adapters and interfaces for LLMs and workflow engines.
+ * High-level purpose:
+ * Local-inference adapter for Ollama-compatible models used as offline or
+ * cost-controlled execution path.
+ * Business value: provides self-hosted model support for privacy-sensitive or
+ * low-latency deployments with minimal external dependency.
+ * System impact: default/fallback execution path when remote providers are
+ * unavailable or intentionally disabled.
+ *
+ * Key Features (and trade-offs):
+ * - Native Ollama chat API integration with deterministic parsing flow.
+ * - Structured response mode through prompt-constrained JSON generation.
+ * - Supports custom base URL for on-prem and remote Ollama hosts.
+ * - Usage metadata surfaced when returned by model/runtime.
+ * - Trade-off: schema reliability depends on prompt discipline rather than
+ *   first-class provider JSON enforcement.
+ *
+ * Usage Guide:
+ * 1. Instantiate with `model` and optional `baseURL`.
+ * 2. Invoke `generateResponse` for conversational text results.
+ * 3. Invoke `generateStructuredResponse` with strict schema prompts.
+ * 4. Prefer low-temperature settings for extraction workloads.
+ * 5. Pair with fallback routing for resilience in mixed provider setups.
  */
 import {
   ILLMProvider,
@@ -105,7 +126,6 @@ export class OllamaProvider implements ILLMProvider {
     context?: RetrievedContext,
   ): ParsedIntent {
         const raw = String(message || '').trim();
-        const lower = raw.toLowerCase();
         const recentWorkflowKey = this.extractRecentWorkflowKey(context);
         const matchedWorkflow = this.findWorkflowMatch(raw, workflows);
 

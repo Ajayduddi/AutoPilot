@@ -1,10 +1,22 @@
+/**
+ * @fileoverview Unit tests for webhook middleware verification and rejection
+ * behavior under malformed or missing signatures.
+ */
 import { afterEach, describe, expect, it } from "bun:test";
 import type { NextFunction, Request, Response } from "express";
 import { WebhookSecretRepo } from "../../src/repositories/webhook-secret.repo";
 import { requireWebhookSecret } from "../../src/middleware/webhook.middleware";
 
-function mockReq(headers: Record<string, string> = {}): Request {
-  return { headers } as unknown as Request;
+function mockReq(
+  headers: Record<string, string> = {},
+  overrides: Partial<Request> = {},
+): Request {
+  return {
+    headers,
+    ip: "127.0.0.1",
+    socket: { remoteAddress: "127.0.0.1" } as Request["socket"],
+    ...overrides,
+  } as unknown as Request;
 }
 
 function mockRes() {
@@ -76,5 +88,50 @@ describe("requireWebhookSecret", () => {
     await requireWebhookSecret(mockReq({ "x-webhook-secret": "wrong-secret" }), res, next);
 
     expect(state.statusCode).toBe(401);
+  });
+
+  it("allows loopback development fallback when no secret is configured", async () => {
+    delete process.env.WEBHOOK_CALLBACK_SECRET;
+    delete process.env.N8N_CALLBACK_SECRET;
+    process.env.NODE_ENV = "development";
+
+    (WebhookSecretRepo.hasActiveSecrets as unknown as Function) = async () => false;
+
+    let nextCalls = 0;
+    const next: NextFunction = () => {
+      nextCalls += 1;
+    };
+    const { res } = mockRes();
+
+    await requireWebhookSecret(mockReq(), res, next);
+    expect(nextCalls).toBe(1);
+  });
+
+  it("rejects non-loopback development fallback when no secret is configured", async () => {
+    delete process.env.WEBHOOK_CALLBACK_SECRET;
+    delete process.env.N8N_CALLBACK_SECRET;
+    process.env.NODE_ENV = "development";
+
+    (WebhookSecretRepo.hasActiveSecrets as unknown as Function) = async () => false;
+
+    const { res, state } = mockRes();
+    const next: NextFunction = () => undefined;
+
+    await requireWebhookSecret(
+      mockReq({}, {
+        ip: "203.0.113.10",
+        socket: { remoteAddress: "203.0.113.10" } as Request["socket"],
+      }),
+      res,
+      next,
+    );
+
+    expect(state.statusCode).toBe(503);
+    expect(state.payload).toEqual({
+      error: {
+        message: "Webhook security is not configured. Configure webhook secrets before accepting non-local callbacks.",
+        code: "SERVICE_UNAVAILABLE",
+      },
+    });
   });
 });

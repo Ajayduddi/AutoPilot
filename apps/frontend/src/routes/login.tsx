@@ -1,6 +1,30 @@
+/**
+ * @fileoverview apps/frontend/src/routes/login.tsx
+ *
+ * High-level purpose:
+ * Frontend route module that composes page-level UI, data loading, and user flows for navigation states.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates route-scoped layout and state transitions.
+ * - Coordinates API interactions with route-specific rendering behavior.
+ * - Supports responsive UX patterns for authenticated and guest flows.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Create or update route component exports for target navigation path.
+ * 2. Connect route logic to frontend API helpers and shared context providers.
+ * 3. Validate route behavior on desktop and mobile with route/e2e tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { Title } from "@solidjs/meta";
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import { createEffect, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { useAuth } from "../context/auth.context";
 
 export default function LoginPage() {
@@ -9,13 +33,16 @@ export default function LoginPage() {
   const [search] = useSearchParams();
   const [email, setEmail] = createSignal("");
   const [password, setPassword] = createSignal("");
+  const [totpCode, setTotpCode] = createSignal("");
   const [submitting, setSubmitting] = createSignal(false);
   const [localError, setLocalError] = createSignal("");
+  const mfaRequired = createMemo(() => Boolean(auth.state()?.pendingMfaUser));
+  const pendingMfaEmail = createMemo(() => auth.state()?.pendingMfaUser?.email || auth.state()?.user?.email || "");
 
   createEffect(() => {
     const state = auth.state();
     if (!state) return;
-    if (state.mode === "authenticated") navigate("/", { replace: true });
+    if (state.mode === "authenticated" && !state.pendingMfaUser) navigate("/", { replace: true });
     if (state.mode === "onboarding") navigate("/onboarding", { replace: true });
   });
 
@@ -25,6 +52,7 @@ export default function LoginPage() {
     if (e === "single_user_locked") setLocalError("This app is locked to the first onboarded account.");
     else if (e === "google_auth_failed") setLocalError("Google authentication failed. Please try again.");
     else if (e === "invalid_oauth_state") setLocalError("OAuth session expired. Please retry Google login.");
+    else if (e === "mfa") setLocalError("Multi-factor verification is required to finish sign-in.");
   });
 
   /**
@@ -51,10 +79,32 @@ export default function LoginPage() {
     }
     setSubmitting(true);
     try {
-      await auth.login({ email: email().trim(), password: password() });
-      navigate("/", { replace: true });
+      const result = await auth.login({ email: email().trim(), password: password() });
+      if (!result.mfaRequired) {
+        navigate("/", { replace: true });
+      } else {
+        setTotpCode("");
+      }
     } catch (err: any) {
       setLocalError(err?.message || "Login failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function submitTotp(e: Event) {
+    e.preventDefault();
+    setLocalError("");
+    if (!totpCode().trim()) {
+      setLocalError("Authenticator code is required.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await auth.verifyTotp({ code: totpCode().trim() });
+      navigate("/", { replace: true });
+    } catch (err: any) {
+      setLocalError(err?.message || "Verification failed.");
     } finally {
       setSubmitting(false);
     }
@@ -75,47 +125,86 @@ export default function LoginPage() {
       <div class="w-full max-w-[400px] rounded-3xl border border-neutral-800/60 bg-[#121212] p-8 sm:p-10 shadow-2xl">
         <div class="mb-8 flex justify-center">
           <div class="w-14 h-14 rounded-3xl bg-indigo-600/20 border border-indigo-500/20 flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.15)]">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
           </div>
         </div>
         <h1 class="text-[26px] font-semibold tracking-tight text-white text-center">Welcome back</h1>
         <p class="text-[14px] text-neutral-500 mt-2 text-center">Sign in to continue using AutoPilot.</p>
 
-        <form class="mt-8 space-y-4" onSubmit={submitLogin}>
-          <div class="space-y-1.5">
-            <label class="text-[13px] font-medium text-neutral-400 pl-1">Email</label>
-            <input
-              type="email"
-              value={email()}
-              onInput={(ev) => setEmail(ev.currentTarget.value)}
-              placeholder="e.g. you@example.com"
-              class="h-12 w-full rounded-xl border border-neutral-800 bg-[#1a1a1a] px-4 text-[15px] text-neutral-100 outline-none focus:border-neutral-600 focus:bg-[#1f1f1f] transition-all placeholder:text-neutral-600"
-            />
-          </div>
-          <div class="space-y-1.5 pt-1">
-            <label class="flex items-center justify-between text-[13px] font-medium text-neutral-400 pl-1 pr-1">
-              <span>Password</span>
-            </label>
-            <input
-              type="password"
-              value={password()}
-              onInput={(ev) => setPassword(ev.currentTarget.value)}
-              placeholder="••••••••"
-              class="h-12 w-full rounded-xl border border-neutral-800 bg-[#1a1a1a] px-4 text-[15px] text-neutral-100 outline-none focus:border-neutral-600 focus:bg-[#1f1f1f] transition-all placeholder:text-neutral-600"
-            />
-          </div>
-          <div class="pt-2">
-            <button
-              type="submit"
-              disabled={submitting()}
-              class={`h-12 w-full rounded-xl bg-neutral-100 text-black text-[15px] font-medium transition-colors ${submitting() ? "opacity-50 cursor-not-allowed" : "hover:bg-white"}`}
-            >
-              {submitting() ? "Signing in..." : "Sign in"}
-            </button>
-          </div>
-        </form>
+        <Show
+          when={!mfaRequired()}
+          fallback={
+            <form class="mt-8 space-y-4" onSubmit={submitTotp}>
+              <div class="rounded-2xl border border-emerald-500/15 bg-emerald-500/5 px-4 py-3 text-left">
+                <p class="text-[13px] font-medium text-emerald-300">Second factor required</p>
+                <p class="mt-1 text-[13px] text-neutral-400">
+                  Enter the 6-digit code from your authenticator app for <span class="text-neutral-200">{pendingMfaEmail() || "your account"}</span>.
+                </p>
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-[13px] font-medium text-neutral-400 pl-1" for="login-totp-code">Authenticator code</label>
+                <input
+                  id="login-totp-code"
+                  type="text"
+                  inputmode="numeric"
+                  autocomplete="one-time-code"
+                  maxLength={8}
+                  value={totpCode()}
+                  onInput={(ev) => setTotpCode(ev.currentTarget.value.replace(/[^\d]/g, "").slice(0, 8))}
+                  placeholder="123456"
+                  class="h-12 w-full rounded-xl border border-neutral-800 bg-[#1a1a1a] px-4 text-[15px] tracking-[0.25em] text-neutral-100 outline-none focus:border-neutral-600 focus:bg-[#1f1f1f] transition-all placeholder:text-neutral-600"
+                />
+              </div>
+              <div class="pt-2">
+                <button
+                  type="submit"
+                  disabled={submitting()}
+                  class={`h-12 w-full rounded-xl bg-neutral-100 text-black text-[15px] font-medium transition-colors ${submitting() ? "opacity-50 cursor-not-allowed" : "hover:bg-white"}`}
+                >
+                  {submitting() ? "Verifying..." : "Verify code"}
+                </button>
+              </div>
+            </form>
+          }
+        >
+          <form class="mt-8 space-y-4" onSubmit={submitLogin}>
+            <div class="space-y-1.5">
+              <label class="text-[13px] font-medium text-neutral-400 pl-1" for="login-email">Email</label>
+              <input
+                id="login-email"
+                type="email"
+                value={email()}
+                onInput={(ev) => setEmail(ev.currentTarget.value)}
+                placeholder="e.g. you@example.com"
+                class="h-12 w-full rounded-xl border border-neutral-800 bg-[#1a1a1a] px-4 text-[15px] text-neutral-100 outline-none focus:border-neutral-600 focus:bg-[#1f1f1f] transition-all placeholder:text-neutral-600"
+              />
+            </div>
+            <div class="space-y-1.5 pt-1">
+              <label class="flex items-center justify-between text-[13px] font-medium text-neutral-400 pl-1 pr-1" for="login-password">
+                <span>Password</span>
+              </label>
+              <input
+                id="login-password"
+                type="password"
+                value={password()}
+                onInput={(ev) => setPassword(ev.currentTarget.value)}
+                placeholder="••••••••"
+                class="h-12 w-full rounded-xl border border-neutral-800 bg-[#1a1a1a] px-4 text-[15px] text-neutral-100 outline-none focus:border-neutral-600 focus:bg-[#1f1f1f] transition-all placeholder:text-neutral-600"
+              />
+            </div>
+            <div class="pt-2">
+              <button
+                type="submit"
+                disabled={submitting()}
+                class={`h-12 w-full rounded-xl bg-neutral-100 text-black text-[15px] font-medium transition-colors ${submitting() ? "opacity-50 cursor-not-allowed" : "hover:bg-white"}`}
+              >
+                {submitting() ? "Signing in..." : "Sign in"}
+              </button>
+            </div>
+          </form>
+        </Show>
 
-        <Show when={auth.state()?.oauth.google}>
+        <Show when={auth.state()?.oauth.google && !mfaRequired()}>
           <div class="relative my-7">
             <div class="absolute inset-0 flex items-center">
               <div class="w-full border-t border-neutral-800/80"></div>
@@ -140,7 +229,7 @@ export default function LoginPage() {
         </Show>
 
         <Show when={localError()}>
-          <div class="mt-6 rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-center">
+          <div class="mt-6 rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-center" role="alert" aria-live="assertive" id="login-error">
             <p class="text-[13px] text-red-400 font-medium">{localError()}</p>
           </div>
         </Show>

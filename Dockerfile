@@ -22,8 +22,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
-ENV FRONTEND_ORIGIN=http://localhost:3000
+ENV HOME=/home/autopilot
 ENV FRONTEND_STATIC_DIR=/app/public
+ENV AUTOPILOT_HOME=/home/autopilot/.autopilot
 
 # Minimal manifests needed to install backend production deps
 COPY package.json bun.lock tsconfig.base.json ./
@@ -42,8 +43,16 @@ COPY --from=build /app/apps/backend/src/db/migrations /app/apps/backend/dist/db/
 COPY --from=build /app/apps/frontend/.output/public /app/public
 
 RUN find /app -name "*.map" -type f -delete \
-  && rm -rf /root/.bun/install/cache /tmp/*
+  && rm -rf /root/.bun/install/cache /tmp/* \
+  && mkdir -p /home/autopilot/.autopilot /tmp \
+  && chmod 1777 /tmp \
+  && chown -R autopilot:autopilot /app /home/autopilot
+
+USER autopilot
 
 EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD bun -e "const url = 'http://127.0.0.1:' + (process.env.PORT || '3000') + '/health'; const res = await fetch(url); if (!res.ok) throw new Error('unhealthy');"
 
 CMD ["bun", "/app/apps/backend/dist/index.js"]

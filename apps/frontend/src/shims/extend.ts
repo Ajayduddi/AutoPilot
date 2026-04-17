@@ -1,4 +1,28 @@
 /**
+ * @fileoverview apps/frontend/src/shims/extend.ts
+ *
+ * High-level purpose:
+ * Frontend compatibility shim module used to normalize runtime behavior across bundler/library boundaries.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Provides targeted compatibility adjustments in one place.
+ * - Reduces framework-specific workarounds leaking into app code.
+ * - Preserves stable behavior for dependent frontend modules.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import shim only where compatibility adaptation is needed.
+ * 2. Keep shim scope narrow and document upstream constraints.
+ * 3. Retest impacted routes/components after shim changes.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
+/**
   * plain object type alias.
   */
 type PlainObject = Record<string, unknown>;

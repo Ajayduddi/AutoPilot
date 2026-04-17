@@ -1,3 +1,27 @@
+/**
+ * @fileoverview Chat block renderer that maps structured assistant blocks to
+ *
+ * High-level purpose:
+ * Reusable frontend presentation module for rendering chat, settings, and UI primitives across routes.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates reusable UI logic behind typed component contracts.
+ * - Supports composable view patterns with minimal route coupling.
+ * - Balances readability and flexibility for evolving product surfaces.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import the component into route or parent composition layers.
+ * 2. Pass required typed props and wire callbacks to domain actions.
+ * 3. Confirm visual and interaction behavior with component tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { For, Show, createSignal } from "solid-js";
 import { TaskCard } from "./TaskCard";
 import { WorkflowCard } from "./WorkflowCard";
@@ -14,9 +38,6 @@ import type {
   DetailToggleBlock, TimelineBlock, ApprovalCardBlock,
 } from "./types";
 
-/**
- * Interface describing block renderer props shape.
- */
 interface BlockRendererProps {
   blocks: AssistantBlock[];
   messageId?: string;
@@ -34,19 +55,7 @@ const timelineStatusDot: Record<string, string> = {
 };
 
 /**
- * Utility function to timeline view.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @param props - Input value for TimelineView.
- * @returns Return value from TimelineView.
- *
- * @example
- * ```typescript
- * const output = TimelineView(value);
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
+ * Timeline renderer for step/event-oriented assistant blocks.
  */
 function TimelineView(props: { block: TimelineBlock }) {
   return (
@@ -79,18 +88,7 @@ function TimelineView(props: { block: TimelineBlock }) {
 }
 
 /**
- * Utility function to detail toggle view.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @returns Return value from DetailToggleView.
- *
- * @example
- * ```typescript
- * const output = DetailToggleView();
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
+ * Collapsible detail block wrapper that recursively renders nested blocks.
  */
 function DetailToggleView(props: {
   block: DetailToggleBlock;
@@ -135,19 +133,7 @@ function DetailToggleView(props: {
 }
 
 /**
- * Utility function to approval card view.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @param props - Input value for ApprovalCardView.
- * @returns Return value from ApprovalCardView.
- *
- * @example
- * ```typescript
- * const output = ApprovalCardView(value);
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
+ * Approval card renderer for guarded workflow execution paths.
  */
 function ApprovalCardView(props: { block: ApprovalCardBlock; onAction?: BlockRendererProps["onAction"] }) {
   const statusConfig = {
@@ -204,19 +190,20 @@ function ApprovalCardView(props: { block: ApprovalCardBlock; onAction?: BlockRen
 }
 
 /**
- * Utility function to block renderer.
+ * Main structured block renderer for assistant responses.
  *
  * @remarks
- * Frontend utility used by the web app UI.
- * @param props - Input value for BlockRenderer.
- * @returns Return value from BlockRenderer.
+ * This component is intentionally type-dispatch driven so new block types can
+ * be added incrementally without rewriting message composition logic.
  *
  * @example
- * ```typescript
- * const output = BlockRenderer(value);
- * console.log(output);
+ * ```tsx
+ * <BlockRenderer
+ *   blocks={assistantBlocks}
+ *   onAction={handleAction}
+ *   onQuestionAnswer={handleQuestionAnswer}
+ * />
  * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
  */
 export function BlockRenderer(props: BlockRendererProps) {
   const isStreamingBlock = (idx: number) =>
@@ -232,7 +219,7 @@ export function BlockRenderer(props: BlockRendererProps) {
             case "summary":
               return <div class="block-enter"><SummaryBlock title={block.title} items={block.items} /></div>;
 
-            case "markdown":
+            case "markdown": {
               return (
                 <section class="block-enter space-y-1.5">
                   <Show when={block.title}>
@@ -244,8 +231,9 @@ export function BlockRenderer(props: BlockRendererProps) {
                   </div>
                 </section>
               );
+            }
 
-            case "text":
+            case "text": {
               return (
                 <section class="block-enter space-y-1.5">
                   <Show when={block.title}>
@@ -257,6 +245,7 @@ export function BlockRenderer(props: BlockRendererProps) {
                   </p>
                 </section>
               );
+            }
 
             case "result":
               return (

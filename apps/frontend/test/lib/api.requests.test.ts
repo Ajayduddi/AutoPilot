@@ -1,3 +1,27 @@
+/**
+ * @fileoverview apps/frontend/test/lib/api.requests.test.ts
+ *
+ * High-level purpose:
+ * Frontend test module for unit/integration verification of UI behavior, helpers, and route-level logic.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Validates deterministic behavior of components and utilities.
+ * - Captures edge cases and contract expectations in test fixtures.
+ * - Improves safety for refactors through focused assertions.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import module under test and assemble required test doubles.
+ * 2. Write assertions for nominal, boundary, and failure paths.
+ * 3. Run targeted tests to verify intended behavior.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chatApi, notificationsApi, settingsApi, workflowsApi } from "../../src/lib/api";
 

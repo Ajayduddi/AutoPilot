@@ -1,33 +1,45 @@
 /**
  * @fileoverview routes/auth.routes.
  *
- * HTTP endpoints, request validation, and response composition for API resources.
+ * High-level purpose:
+ * HTTP route surface that validates requests and delegates business logic to services.
+ *
+ * Key Features (and trade-offs):
+ * - Schema-driven request validation and response normalization.
+ * - Auth/rate-limit aware route composition for API boundaries.
+ * - Thin handlers that preserve routes -> services -> repositories layering.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Add new endpoints by pairing route handlers with schemas.
+ * 3. Delegate business decisions to service layer components.
+ * 4. Verify contract changes with API and route tests.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import { Router } from 'express';
 import { db } from '../db';
 import { users } from '../db/schema';
 import { and, eq, ne } from 'drizzle-orm';
-import { AuthService, toSafeUser } from '../services/auth.service';
+import { AuthService, toSafeUser } from '../services/auth/auth.service';
 import { UserRepo } from '../repositories/user.repo';
 import { rateLimit } from '../middleware/rate-limit.middleware';
 import { TemporalService } from '../services/temporal.service';
+import { resolveRequestIp } from '../util/request-ip';
 
 const router = Router();
 
-function getIp(req: any) {
-    const xfwd = req.headers['x-forwarded-for'];
-  if (typeof xfwd === 'string' && xfwd.trim()) return xfwd.split(',')[0].trim();
-  return req.socket?.remoteAddress || null;
-}
-
 router.get('/state', async (req, res, next) => {
   try {
-        const mode = await AuthService.getAuthMode(req.auth?.user);
+    const mode = await AuthService.getAuthMode(req.auth?.user);
     res.json({
       status: 'ok',
       data: {
         mode,
         user: req.auth?.user || null,
+        pendingMfaUser: req.auth?.pendingMfaUser || null,
+        mfaVerified: req.auth?.mfaVerified ?? false,
         oauth: {
           google: AuthService.isGoogleConfigured(),
         },
@@ -44,8 +56,12 @@ router.post('/onboarding/register', async (req, res, next) => {
         const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
         const password = typeof req.body?.password === 'string' ? req.body.password : '';
 
-    if (!email || !password || password.length < 8) {
-      return res.status(400).json({ error: 'Valid email and password (min 8 chars) are required' });
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Valid email and password are required' });
+    }
+    const passwordPolicy = AuthService.validatePasswordPolicy(password);
+    if (!passwordPolicy.ok) {
+      return res.status(400).json({ error: passwordPolicy.message });
     }
 
         const realUsers = await UserRepo.countRealUsers();
@@ -71,7 +87,7 @@ router.post('/onboarding/register', async (req, res, next) => {
         const token = await AuthService.createSessionForUser({
       userId: created.id,
             userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
-      ip: getIp(req),
+      ip: resolveRequestIp(req),
     });
 
     res.setHeader('Set-Cookie', AuthService.serializeSessionCookie(token));
@@ -89,8 +105,7 @@ router.post(
     windowMs: 60_000,
         keyBy: (req) => {
             const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-            const xfwd = req.headers['x-forwarded-for'];
-            const ip = typeof xfwd === 'string' && xfwd.trim() ? xfwd.split(',')[0].trim() : req.socket?.remoteAddress || 'unknown';
+            const ip = resolveRequestIp(req);
       return `${ip}:${email || 'unknown'}`;
     },
   }),
@@ -123,10 +138,19 @@ router.post(
         const token = await AuthService.createSessionForUser({
       userId: user.id,
             userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
-      ip: getIp(req),
+      ip: resolveRequestIp(req),
     });
-
+    const hasMfa = Boolean(user.mfaTotpEnabledAt && user.mfaTotpSecretEnc);
     res.setHeader('Set-Cookie', AuthService.serializeSessionCookie(token));
+    if (hasMfa) {
+      return res.status(202).json({
+        status: 'ok',
+        data: {
+          mfaRequired: true,
+          method: 'totp',
+        },
+      });
+    }
     res.json({ status: 'ok', data: { user: toSafeUser(user) } });
   } catch (err) {
     next(err);
@@ -148,6 +172,29 @@ router.get('/me', async (req, res) => {
   res.json({ status: 'ok', data: { user: req.auth.user } });
 });
 
+router.post('/mfa/totp/verify', async (req, res, next) => {
+  try {
+    const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+    if (!code) {
+      return res.status(400).json({ error: 'TOTP code is required' });
+    }
+    const result = await AuthService.verifyTotpForPendingSession(req.headers.cookie, code);
+    if (!result.ok) {
+      const status = result.reason === 'NO_SESSION' ? 401 : 400;
+      return res.status(status).json({
+        status: 'error',
+        error: {
+          code: result.reason,
+          message: result.reason === 'INVALID_CODE' ? 'Invalid TOTP code' : 'TOTP verification failed',
+        },
+      });
+    }
+    return res.json({ status: 'ok', data: { user: toSafeUser(result.user) } });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/account', async (req, res) => {
   if (!req.auth?.user) return res.status(401).json({ error: 'Authentication required' });
     const user = await UserRepo.getById(req.auth.user.id);
@@ -167,8 +214,86 @@ router.get('/account', async (req, res) => {
       timezone: user.timezone || null,
       hasPassword,
       authProvider,
+      mfa: {
+        enabled: Boolean(user.mfaTotpEnabledAt && user.mfaTotpSecretEnc),
+        pending: Boolean(user.mfaTotpPendingSecretEnc),
+        method: user.mfaTotpEnabledAt ? 'totp' : null,
+        enabledAt: user.mfaTotpEnabledAt || null,
+      },
     },
   });
+});
+
+router.get('/account/mfa', async (req, res, next) => {
+  try {
+    if (!req.auth?.user) return res.status(401).json({ error: 'Authentication required' });
+    const status = await AuthService.getMfaStatus(req.auth.user.id);
+    return res.json({ status: 'ok', data: status });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/account/mfa/totp/setup', async (req, res, next) => {
+  try {
+    if (!req.auth?.user) return res.status(401).json({ error: 'Authentication required' });
+    const user = await UserRepo.getById(req.auth.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const status = await AuthService.getMfaStatus(user.id);
+    if (status.enabled) {
+      return res.status(409).json({ error: 'TOTP MFA is already enabled' });
+    }
+    const setup = await AuthService.beginTotpSetup(user.id, user.email);
+    return res.json({ status: 'ok', data: setup });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/account/mfa/totp/enable', async (req, res, next) => {
+  try {
+    if (!req.auth?.user) return res.status(401).json({ error: 'Authentication required' });
+    const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+    if (!code) {
+      return res.status(400).json({ error: 'TOTP code is required' });
+    }
+    const result = await AuthService.enableTotpForUser(req.auth.user.id, code);
+    if (!result.ok) {
+      return res.status(400).json({ error: 'Invalid TOTP code' });
+    }
+    return res.json({ status: 'ok', data: await AuthService.getMfaStatus(req.auth.user.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/account/mfa/totp/disable', async (req, res, next) => {
+  try {
+    if (!req.auth?.user) return res.status(401).json({ error: 'Authentication required' });
+    const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+    const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
+    if (!code) {
+      return res.status(400).json({ error: 'TOTP code is required' });
+    }
+    const user = await UserRepo.getById(req.auth.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.passwordHash) {
+      if (!currentPassword) {
+        return res.status(400).json({ error: 'Current password is required' });
+      }
+      const validPassword = await AuthService.verifyPassword(currentPassword, user.passwordHash);
+      if (!validPassword) {
+        return res.status(401).json({ error: 'Current password is incorrect' });
+      }
+    }
+    const result = await AuthService.disableTotpForUser(req.auth.user.id, code);
+    if (!result.ok) {
+      return res.status(400).json({ error: 'Invalid TOTP code' });
+    }
+    return res.json({ status: 'ok', data: await AuthService.getMfaStatus(req.auth.user.id) });
+  } catch (err) {
+    next(err);
+  }
 });
 
 router.patch('/account/profile', async (req, res, next) => {
@@ -232,8 +357,9 @@ router.patch('/account/password', async (req, res, next) => {
         const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
 
     if (!currentPassword) return res.status(400).json({ error: 'Current password is required' });
-    if (!newPassword || newPassword.length < 8) {
-      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    const passwordPolicy = AuthService.validatePasswordPolicy(newPassword);
+    if (!passwordPolicy.ok) {
+      return res.status(400).json({ error: passwordPolicy.message });
     }
 
         const user = await UserRepo.getById(req.auth.user.id);
@@ -254,11 +380,11 @@ router.patch('/account/password', async (req, res, next) => {
   }
 });
 
-router.get('/google/start', async (req, res) => {
+router.get('/google/start', async (_req, res) => {
   if (!AuthService.isGoogleConfigured()) {
     return res.status(400).json({ error: 'Google OAuth is not configured' });
   }
-  const { state, pkce } = AuthService.generateOAuthStateAndPkce();
+  const { state, pkce } = await AuthService.generateOAuthStateAndPkce();
   res.setHeader('Set-Cookie', [
     AuthService.serializeOAuthStateCookie(state),
     AuthService.serializePkceCookie(pkce.codeVerifier),
@@ -324,15 +450,16 @@ router.get('/google/callback', async (req, res) => {
         const token = await AuthService.createSessionForUser({
       userId: user.id,
             userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
-      ip: getIp(req),
+      ip: resolveRequestIp(req),
     });
 
+    const hasMfa = Boolean(user.mfaTotpEnabledAt && user.mfaTotpSecretEnc);
     res.setHeader('Set-Cookie', [
       AuthService.serializeSessionCookie(token),
       AuthService.clearOAuthStateCookie(),
       AuthService.clearPkceCookie(),
     ]);
-    return res.redirect(`${AuthService.FRONTEND_ORIGIN}/`);
+    return res.redirect(`${AuthService.FRONTEND_ORIGIN}/${hasMfa ? 'login?mfa=required' : ''}`);
   } catch {
     res.setHeader('Set-Cookie', [
       AuthService.clearOAuthStateCookie(),

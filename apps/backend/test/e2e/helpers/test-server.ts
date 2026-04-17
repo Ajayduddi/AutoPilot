@@ -1,15 +1,19 @@
+/**
+ * @fileoverview Helper utilities for spinning up and tearing down ephemeral
+ * Express servers in E2E tests.
+ */
 import express, { type Express } from "express";
 import type { Server } from "http";
 import { traceMiddleware } from "../../../src/middleware/trace.middleware";
 import { errorMiddleware } from "../../../src/middleware/error.middleware";
 import { UserRepo } from "../../../src/repositories/user.repo";
-import { AuthService } from "../../../src/services/auth.service";
+import { AuthService } from "../../../src/services/auth/auth.service";
 import { ChatRepo } from "../../../src/repositories/chat.repo";
 import { ChatService } from "../../../src/services/chat.service";
-import { OrchestratorService } from "../../../src/services/orchestrator.service";
-import { AgentService } from "../../../src/services/agent.service";
-import { WorkflowService } from "../../../src/services/workflow.service";
-import { NotificationService } from "../../../src/services/notification.service";
+import { OrchestratorService } from "../../../src/services/orchestrator/orchestrator.service";
+import { AgentService } from "../../../src/services/agent/agent.service";
+import { WorkflowService } from "../../../src/services/workflow/workflow.service";
+import { NotificationService } from "../../../src/services/notifications/notification.service";
 import { ApprovalRepo } from "../../../src/repositories/approval.repo";
 
 // Store original methods to restore them after each test
@@ -17,11 +21,14 @@ export const originalModules = {
   canUseAsSingleUser: UserRepo.canUseAsSingleUser,
   getByEmail: UserRepo.getByEmail,
   verifyPassword: AuthService.verifyPassword,
+  verifyTotpForPendingSession: (AuthService as any).verifyTotpForPendingSession,
   createSessionForUser: AuthService.createSessionForUser,
   logoutByCookie: AuthService.logoutByCookie,
   ensureThread: ChatRepo.ensureThread,
   getAttachmentsByIds: ChatRepo.getAttachmentsByIds,
+  linkAttachmentsToMessage: ChatRepo.linkAttachmentsToMessage,
   addMessage: ChatService.addMessage,
+  handleIncomingMessage: OrchestratorService.handleIncomingMessage,
   handleStreamingMessage: OrchestratorService.handleStreamingMessage,
   agentEnabled: AgentService.isEnabled,
   agentStreamingMessage: AgentService.handleStreamingMessage,
@@ -34,15 +41,21 @@ export const originalModules = {
   resolveApproval: ApprovalRepo.resolveApproval,
 };
 
+/**
+ * Restores all monkey-patched module methods captured in `originalModules`.
+ */
 export function restoreMocks() {
   (UserRepo as any).canUseAsSingleUser = originalModules.canUseAsSingleUser;
   (UserRepo as any).getByEmail = originalModules.getByEmail;
   (AuthService as any).verifyPassword = originalModules.verifyPassword;
+  (AuthService as any).verifyTotpForPendingSession = originalModules.verifyTotpForPendingSession;
   (AuthService as any).createSessionForUser = originalModules.createSessionForUser;
   (AuthService as any).logoutByCookie = originalModules.logoutByCookie;
   (ChatRepo as any).ensureThread = originalModules.ensureThread;
   (ChatRepo as any).getAttachmentsByIds = originalModules.getAttachmentsByIds;
+  (ChatRepo as any).linkAttachmentsToMessage = originalModules.linkAttachmentsToMessage;
   (ChatService as any).addMessage = originalModules.addMessage;
+  (OrchestratorService as any).handleIncomingMessage = originalModules.handleIncomingMessage;
   (OrchestratorService as any).handleStreamingMessage = originalModules.handleStreamingMessage;
   (AgentService as any).isEnabled = originalModules.agentEnabled;
   (AgentService as any).handleStreamingMessage = originalModules.agentStreamingMessage;
@@ -55,6 +68,9 @@ export function restoreMocks() {
   (ApprovalRepo as any).resolveApproval = originalModules.resolveApproval;
 }
 
+/**
+ * Starts an ephemeral test server and returns base URL plus async close helper.
+ */
 export async function withServer(app: Express): Promise<{ baseUrl: string; close: () => Promise<void> }> {
   // Ensure tests use the same centralized API error shape as production routes.
   app.use(errorMiddleware);
@@ -91,6 +107,10 @@ export async function withServer(app: Express): Promise<{ baseUrl: string; close
   });
 }
 
+/**
+ * Creates a baseline Express app with JSON, trace middleware, and optional
+ * auth context injection for protected route tests.
+ */
 export function buildApp(opts?: { injectAuth?: boolean }) {
   const app = express();
   app.use(express.json());

@@ -1,8 +1,12 @@
+/**
+ * @fileoverview End-to-end webhook route tests for signature verification,
+ * callback handling, and error paths.
+ */
 import { afterEach, describe, expect, it } from "bun:test";
 import { webhooksRouter } from "../../src/routes/webhooks.routes";
 import { buildApp, restoreMocks, withServer } from "./helpers/test-server";
-import { WorkflowService } from "../../src/services/workflow.service";
-import { NotificationService } from "../../src/services/notification.service";
+import { WorkflowService } from "../../src/services/workflow/workflow.service";
+import { NotificationService } from "../../src/services/notifications/notification.service";
 
 afterEach(() => {
   restoreMocks();

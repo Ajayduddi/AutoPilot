@@ -1,9 +1,29 @@
 /**
  * @fileoverview providers/workflow/n8n.adapter.
  *
- * External provider adapters and interfaces for LLMs and workflow engines.
+ * High-level purpose:
+ * Concrete workflow adapter for n8n API integration, including workflow CRUD,
+ * execution triggering, and node-level operation handling.
+ * Business value: enables production orchestration against n8n automations
+ * with consistent backend contracts and execution telemetry.
+ * System impact: primary workflow backend path in environments configured for
+ * n8n-based process automation.
+ *
+ * Key Features (and trade-offs):
+ * - Token-based API client initialization with endpoint normalization.
+ * - Workflow creation/update/activation and execution helpers.
+ * - Node-level operation result mapping to shared contracts.
+ * - Rich metadata propagation for execution IDs and operation context.
+ * - Trade-off: strong dependency on n8n API semantics and version behavior.
+ *
+ * Usage Guide:
+ * 1. Configure n8n endpoint and credentials in provider settings.
+ * 2. Resolve adapter via workflow factory.
+ * 3. Call adapter methods for workflow lifecycle and node operations.
+ * 4. Consume normalized operation results in orchestrator services.
+ * 5. Validate against target n8n instance/version in integration tests.
  */
-import type {
+import {
   Workflow,
   WorkflowExecutionRequest,
   WorkflowExecutionResult,
@@ -23,7 +43,7 @@ import type { NormalizedProviderResult, NormalizedProviderError, ValidationResul
 //  n8n supports synchronous responses (data returned in the HTTP response)
 //  and asynchronous callbacks (POST back to our /api/webhooks/n8n endpoint).
 //
-//  This adapter wraps the existing N8nService fetch logic and normalizes it.
+//  This adapter handles direct n8n webhook execution and normalization.
 // ─────────────────────────────────────────────────────────────
 
 /**
@@ -189,7 +209,7 @@ export class N8nAdapter extends BaseWebhookAdapter implements WorkflowProviderAd
    * - Arrays of execution items
    * - Objects with a `data` field containing items
    */
-  normalizeResponse(raw: unknown, workflow: Workflow): NormalizedProviderResult {
+  normalizeResponse(raw: unknown, _workflow: Workflow): NormalizedProviderResult {
         const rawObj = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
 
     // n8n often returns arrays or { data: [...] } shapes

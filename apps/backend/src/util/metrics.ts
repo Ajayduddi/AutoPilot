@@ -1,7 +1,22 @@
 /**
  * @fileoverview util/metrics.
  *
- * In-memory metrics registry with optional durable snapshot + Pushgateway export helpers.
+ * High-level purpose:
+ * Shared backend utilities for operational concerns and low-level helpers.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates reusable helper logic for runtime infrastructure.
+ * - Supports observability, networking, and internal mechanics.
+ * - Avoids duplication of common platform helper behavior.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Use utility helpers where cross-domain reuse is needed.
+ * 3. Keep helpers side-effect-light and composable.
+ * 4. Verify callers after utility contract changes.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import { getRuntimeConfig } from "../config/runtime.config";
 
@@ -41,9 +56,11 @@ let exporterInFlight = false;
 let snapshotLoaded = false;
 let snapshotPersistTimer: NodeJS.Timeout | null = null;
 let snapshotPersistInFlight = false;
+let snapshotDirty = false;
 
 type MetricsExporterConfig = {
   enabled: boolean;
+  snapshotEnabled: boolean;
   pushgatewayUrl: string;
   job: string;
   instance: string;
@@ -65,6 +82,7 @@ function getExporterConfig(): MetricsExporterConfig {
     || `${configDir}/metrics.snapshot.json`;
   return {
     enabled: Boolean(pushgatewayUrl),
+    snapshotEnabled: Boolean(runtime.metricsExporter.snapshotEnabled),
     pushgatewayUrl,
     job: String(runtime.metricsExporter.jobName || "autopilot-backend").trim() || "autopilot-backend",
     instance: String(runtime.metricsExporter.instanceId || process.env.HOSTNAME || process.pid).trim() || String(process.pid),
@@ -111,9 +129,11 @@ async function persistSnapshotNow(): Promise<void> {
   snapshotPersistInFlight = true;
   try {
     const cfg = getExporterConfig();
+    if (!cfg.snapshotEnabled) return;
     const bunRuntime = (globalThis as { Bun?: { write: (target: string, data: string) => Promise<number> } }).Bun;
     if (!bunRuntime) return;
     await bunRuntime.write(cfg.snapshotPath, JSON.stringify(buildSnapshot()));
+    snapshotDirty = false;
   } catch {
     // Best-effort persistence, never fail request paths.
   } finally {
@@ -121,13 +141,21 @@ async function persistSnapshotNow(): Promise<void> {
   }
 }
 
-function scheduleSnapshotPersist(): void {
-  if (snapshotPersistTimer) return;
-  snapshotPersistTimer = setTimeout(() => {
-    snapshotPersistTimer = null;
+function ensureSnapshotPersistenceStarted(): void {
+  const cfg = getExporterConfig();
+  if (!cfg.snapshotEnabled || snapshotPersistTimer) return;
+  const intervalMs = Math.max(15_000, cfg.intervalMs);
+  snapshotPersistTimer = setInterval(() => {
+    if (!snapshotDirty) return;
     void persistSnapshotNow();
-  }, 2_000);
+  }, intervalMs);
   snapshotPersistTimer.unref?.();
+}
+
+function markSnapshotDirty(): void {
+  if (!getExporterConfig().snapshotEnabled) return;
+  snapshotDirty = true;
+  ensureSnapshotPersistenceStarted();
 }
 
 async function loadSnapshotOnce(): Promise<void> {
@@ -135,6 +163,7 @@ async function loadSnapshotOnce(): Promise<void> {
   snapshotLoaded = true;
   try {
     const cfg = getExporterConfig();
+    if (!cfg.snapshotEnabled) return;
     const bunRuntime = (globalThis as { Bun?: { file: (path: string) => { text: () => Promise<string>; exists: () => Promise<boolean> } } }).Bun;
     if (!bunRuntime) return;
     const file = bunRuntime.file(cfg.snapshotPath);
@@ -212,6 +241,7 @@ async function pushMetricsSnapshot(): Promise<void> {
  */
 function ensureMetricsExporterStarted(): void {
   ensureMetricsStateLoaded();
+  ensureSnapshotPersistenceStarted();
   if (exporterStarted) return;
   const cfg = getExporterConfig();
   if (!cfg.enabled) return;
@@ -281,7 +311,7 @@ export function incrementCounter(name: string, labels?: LabelValues, value = 1):
   current.value += value;
   byLabels.set(key, current);
   counters.set(name, byLabels);
-  scheduleSnapshotPersist();
+  markSnapshotDirty();
 }
 
 /**
@@ -325,7 +355,7 @@ export function observeHistogram(
   }
   existing.samples.set(key, sample);
   histograms.set(name, existing);
-  scheduleSnapshotPersist();
+  markSnapshotDirty();
 }
 
 /**

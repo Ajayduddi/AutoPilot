@@ -1,13 +1,28 @@
 /**
  * @fileoverview middleware/csrf.middleware.
  *
- * Cross-cutting HTTP middleware for security, auth, tracing, and input handling.
+ * High-level purpose:
+ * Cross-cutting HTTP middleware for security, validation, tracing, and request policy enforcement.
+ *
+ * Key Features (and trade-offs):
+ * - Composes request guards before handlers execute.
+ * - Standardizes auth, CSRF, headers, and error boundaries.
+ * - Provides reusable policy units across API routes.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Mount middleware in bootstrap with explicit ordering.
+ * 3. Keep middleware focused on request/response concerns.
+ * 4. Regression-test security-sensitive changes.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import type { NextFunction, Request, Response } from "express";
-import crypto from "crypto";
 
 const CSRF_COOKIE_NAME = "ap_csrf";
 const IS_PROD = process.env.NODE_ENV === "production";
+const encoder = new TextEncoder();
 
 /**
  * Decodes cookie values without throwing on malformed percent-encoding.
@@ -49,10 +64,14 @@ function parseCookies(cookieHeader?: string | null): Record<string, string> {
  * @returns `true` when values are equal.
  */
 function constantEquals(left: string, right: string): boolean {
-    const a = Buffer.from(left);
-    const b = Buffer.from(right);
+    const a = encoder.encode(left);
+    const b = encoder.encode(right);
   if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    diff |= a[i] ^ b[i];
+  }
+  return diff === 0;
 }
 
 /**
@@ -103,7 +122,11 @@ export function csrfMiddleware(req: Request, res: Response, next: NextFunction) 
     const cookies = parseCookies(req.headers.cookie);
     let csrfToken = cookies[CSRF_COOKIE_NAME];
   if (!csrfToken) {
-    csrfToken = crypto.randomBytes(24).toString("base64url");
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    csrfToken = btoa(String.fromCharCode(...bytes))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "");
     issueCsrfCookie(res, csrfToken);
   }
 
@@ -125,4 +148,3 @@ export function csrfMiddleware(req: Request, res: Response, next: NextFunction) 
 
   return next();
 }
-

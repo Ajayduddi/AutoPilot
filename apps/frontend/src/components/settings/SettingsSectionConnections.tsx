@@ -1,5 +1,30 @@
+/**
+ * @fileoverview apps/frontend/src/components/settings/SettingsSectionConnections.tsx
+ *
+ * High-level purpose:
+ * Reusable frontend presentation module for rendering chat, settings, and UI primitives across routes.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates reusable UI logic behind typed component contracts.
+ * - Supports composable view patterns with minimal route coupling.
+ * - Balances readability and flexibility for evolving product surfaces.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import the component into route or parent composition layers.
+ * 2. Pass required typed props and wire callbacks to domain actions.
+ * 3. Confirm visual and interaction behavior with component tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { For, Show, type Accessor } from "solid-js";
 import { CustomSelect } from "../ui/CustomSelect";
+import type { RetrievalPreferences } from "../../lib/api";
 import { providerLabel, providerSelectOptions, settingsCls } from "./types";
 
 /**
@@ -46,6 +71,7 @@ export function SettingsSectionConnections(props: {
   savingDefaultModel: Accessor<boolean>;
   defaultModelError: Accessor<string>;
   defaultModelDisplayLabel: Accessor<string>;
+  currentDefaultModelDisplayLabel: Accessor<string>;
   activeProviderConfig: Accessor<ProviderConfig | undefined>;
   activeProviderName: Accessor<string>;
   activeProviderModelsLoading: Accessor<boolean>;
@@ -55,6 +81,20 @@ export function SettingsSectionConnections(props: {
   handleSaveDefaultModel: () => void;
   handleSetActive: (id: string) => void;
   requestDeleteProvider: (id: string) => void;
+  retrievalPreferencesLoading: Accessor<boolean>;
+  retrievalPreferences: Accessor<RetrievalPreferences | undefined>;
+  retrievalDraft: Accessor<RetrievalPreferences | null>;
+  retrievalModelOptions: Accessor<Array<{ value: string; label: string }>>;
+  retrievalModelOptionsLoading: Accessor<boolean>;
+  selectedRetrievalModelDisplay: Accessor<{ modelLabel: string; badgeLabel: string }>;
+  savedRetrievalModelDisplay: Accessor<{ modelLabel: string; badgeLabel: string }>;
+  updateRetrievalField: <K extends keyof RetrievalPreferences>(field: K, value: RetrievalPreferences[K]) => void;
+  retrievalSaving: Accessor<boolean>;
+  retrievalError: Accessor<string>;
+  retrievalValidationError: Accessor<string>;
+  retrievalDirty: Accessor<boolean>;
+  retrievalIsLocalProvider: Accessor<boolean>;
+  handleSaveRetrieval: () => void;
 }) {
   return (
     <section class={`${settingsCls.sectionCard} px-0 md:px-0 space-y-0 md:space-y-7`}>
@@ -127,10 +167,10 @@ export function SettingsSectionConnections(props: {
               </button>
             </div>
             
-            <Show when={props.defaultModel()}>
+            <Show when={props.activeProviderConfig()}>
               <div class="mt-2.5 flex items-center gap-1.5 text-[11px] text-neutral-500 pl-1">
                 <svg class="w-3 h-3 text-emerald-500/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                Current: <span class="text-neutral-300 ml-0.5 max-w-[220px] truncate">{props.defaultModelDisplayLabel()}</span>
+                Current: <span class="text-neutral-300 ml-0.5 max-w-[320px] truncate">{props.currentDefaultModelDisplayLabel()}</span>
               </div>
             </Show>
 
@@ -216,6 +256,224 @@ export function SettingsSectionConnections(props: {
                 )}
               </For>
             </div>
+          </div>
+
+          <div class={`${settingsCls.subCard} px-4 py-5 md:p-5 space-y-4`}>
+            <div>
+              <p class="text-[15px] font-medium text-neutral-200 tracking-tight">Retrieval & Embeddings</p>
+              <p class="text-[13px] text-neutral-500 mt-0.5">Configure semantic search, embedding indexing, and RAG behavior.</p>
+            </div>
+
+            <Show when={!props.retrievalPreferencesLoading() && props.retrievalDraft()} fallback={
+              <div class="rounded-xl border border-neutral-800/60 bg-neutral-900/40 px-4 py-3 text-[13px] text-neutral-500">
+                Loading retrieval settings...
+              </div>
+            }>
+              {(draft) => (
+                <div class="space-y-5">
+                  <div class="space-y-1.5">
+                    <label class="text-[12px] font-medium text-neutral-400 pl-1">Default Embedding Model</label>
+                    <Show when={!props.retrievalModelOptionsLoading()} fallback={
+                      <div class="h-11 rounded-xl border border-neutral-800 bg-[#1a1a1a] px-3.5 flex items-center text-[13px] text-neutral-500">
+                        Discovering models from connected providers...
+                      </div>
+                    }>
+                      <CustomSelect
+                        options={props.retrievalModelOptions()}
+                        value={draft().embeddingModel}
+                        onChange={(value) => props.updateRetrievalField("embeddingModel", value)}
+                        class="w-full"
+                        triggerClass="h-11 rounded-xl border-neutral-800 bg-[#1a1a1a]"
+                        menuClass="rounded-xl border-neutral-800 bg-[#1a1a1a] max-h-80 overflow-y-auto"
+                      />
+                    </Show>
+                    <div class="mt-2.5 flex flex-col gap-1.5 pl-1">
+                      <div class="flex items-center gap-2 text-[11px] text-neutral-500">
+                        <svg class="w-3 h-3 text-emerald-500/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        <span>Selected:</span>
+                        <span class="text-neutral-300 max-w-[420px] truncate">
+                          {props.selectedRetrievalModelDisplay().modelLabel}
+                        </span>
+                        <span class="px-1.5 py-0.5 rounded-md text-[9px] leading-none uppercase tracking-wider font-bold bg-neutral-700/25 border border-neutral-700/60 text-neutral-300">
+                          {props.selectedRetrievalModelDisplay().badgeLabel || "Unknown"}
+                        </span>
+                      </div>
+                      <Show when={props.retrievalDirty()}>
+                        <div class="flex items-center gap-2 text-[11px] text-neutral-500">
+                          <svg class="w-3 h-3 text-neutral-500/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3"></path><circle cx="12" cy="12" r="9"></circle></svg>
+                          <span>Saved:</span>
+                          <span class="text-neutral-400 max-w-[420px] truncate">
+                            {props.savedRetrievalModelDisplay().modelLabel}
+                          </span>
+                          <span class="px-1.5 py-0.5 rounded-md text-[9px] leading-none uppercase tracking-wider font-bold bg-neutral-800/30 border border-neutral-800/60 text-neutral-400">
+                            {props.savedRetrievalModelDisplay().badgeLabel || "Unknown"}
+                          </span>
+                        </div>
+                      </Show>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 md:grid-cols-1 gap-3">
+                    <div class="space-y-1.5">
+                      <label class="text-[12px] font-medium text-neutral-400 pl-1">Vector Dimensions</label>
+                      <input
+                        type="number"
+                        min={64}
+                        max={4096}
+                        value={draft().embeddingVectorDimensions}
+                        onInput={(e) => props.updateRetrievalField("embeddingVectorDimensions", Number(e.currentTarget.value))}
+                        class={`${settingsCls.field} no-spinner`}
+                      />
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div class="space-y-1.5">
+                      <label class="text-[12px] font-medium text-neutral-400 pl-1">Index Batch Size</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={512}
+                        value={draft().embeddingsIndexBatchSize}
+                        onInput={(e) => props.updateRetrievalField("embeddingsIndexBatchSize", Number(e.currentTarget.value))}
+                        class={`${settingsCls.field} no-spinner`}
+                      />
+                    </div>
+                    <div class="space-y-1.5">
+                      <label class="text-[12px] font-medium text-neutral-400 pl-1">Retry Attempts</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={draft().embeddingsRetryMaxAttempts}
+                        onInput={(e) => props.updateRetrievalField("embeddingsRetryMaxAttempts", Number(e.currentTarget.value))}
+                        class={`${settingsCls.field} no-spinner`}
+                      />
+                    </div>
+                    <div class="space-y-1.5">
+                      <label class="text-[12px] font-medium text-neutral-400 pl-1">Retry Delay (ms)</label>
+                      <input
+                        type="number"
+                        min={10}
+                        max={60000}
+                        value={draft().embeddingsRetryBaseDelayMs}
+                        onInput={(e) => props.updateRetrievalField("embeddingsRetryBaseDelayMs", Number(e.currentTarget.value))}
+                        class={`${settingsCls.field} no-spinner`}
+                      />
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div class="space-y-1.5">
+                      <label class="text-[12px] font-medium text-neutral-400 pl-1">Semantic Search Top-K</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={draft().semanticSearchTopKDefault}
+                        onInput={(e) => props.updateRetrievalField("semanticSearchTopKDefault", Number(e.currentTarget.value))}
+                        class={`${settingsCls.field} no-spinner`}
+                      />
+                    </div>
+                    <div class="space-y-1.5">
+                      <label class="text-[12px] font-medium text-neutral-400 pl-1">Semantic Min Score (0-1)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={draft().semanticSearchMinScore}
+                        onInput={(e) => props.updateRetrievalField("semanticSearchMinScore", Number(e.currentTarget.value))}
+                        class={`${settingsCls.field} no-spinner`}
+                      />
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div class="space-y-1.5">
+                      <label class="text-[12px] font-medium text-neutral-400 pl-1">RAG Max Chunks</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={draft().ragMaxChunks}
+                        onInput={(e) => props.updateRetrievalField("ragMaxChunks", Number(e.currentTarget.value))}
+                        class={`${settingsCls.field} no-spinner`}
+                      />
+                    </div>
+                    <div class="space-y-1.5">
+                      <label class="text-[12px] font-medium text-neutral-400 pl-1">RAG Chunk Token Budget</label>
+                      <input
+                        type="number"
+                        min={64}
+                        max={100000}
+                        value={draft().ragChunkTokenBudget}
+                        onInput={(e) => props.updateRetrievalField("ragChunkTokenBudget", Number(e.currentTarget.value))}
+                        class={`${settingsCls.field} no-spinner`}
+                      />
+                    </div>
+                  </div>
+
+                  <Show when={props.retrievalIsLocalProvider()}>
+                    <div class="rounded-xl border border-neutral-800/70 bg-neutral-900/30 p-3 space-y-3">
+                      <p class="text-[12px] font-medium text-neutral-300">Local Provider Advanced</p>
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="space-y-1.5">
+                          <label class="text-[12px] font-medium text-neutral-400 pl-1">Cache Directory</label>
+                          <input
+                            type="text"
+                            value={draft().embeddingCacheDir}
+                            onInput={(e) => props.updateRetrievalField("embeddingCacheDir", e.currentTarget.value)}
+                            class={settingsCls.field}
+                          />
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                          <div class="space-y-1.5">
+                            <label class="text-[12px] font-medium text-neutral-400 pl-1">Allow Remote</label>
+                            <select
+                              value={draft().embeddingAllowRemoteModels ? "true" : "false"}
+                              onChange={(e) => props.updateRetrievalField("embeddingAllowRemoteModels", e.currentTarget.value === "true")}
+                              class={settingsCls.field}
+                            >
+                              <option value="true">true</option>
+                              <option value="false">false</option>
+                            </select>
+                          </div>
+                          <div class="space-y-1.5">
+                            <label class="text-[12px] font-medium text-neutral-400 pl-1">Quantized</label>
+                            <select
+                              value={draft().embeddingQuantized ? "true" : "false"}
+                              onChange={(e) => props.updateRetrievalField("embeddingQuantized", e.currentTarget.value === "true")}
+                              class={settingsCls.field}
+                            >
+                              <option value="true">true</option>
+                              <option value="false">false</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </Show>
+
+                  <Show when={props.retrievalValidationError()}>
+                    <p class="text-xs text-red-400">{props.retrievalValidationError()}</p>
+                  </Show>
+                  <Show when={props.retrievalError()}>
+                    <p class="text-xs text-red-400">{props.retrievalError()}</p>
+                  </Show>
+
+                  <div class="flex justify-end pt-1">
+                    <button
+                      onClick={props.handleSaveRetrieval}
+                      disabled={!props.retrievalDirty() || !!props.retrievalValidationError() || props.retrievalSaving()}
+                      class={`${settingsCls.primaryBtn} min-w-[220px]`}
+                    >
+                      {props.retrievalSaving() ? "Saving..." : "Save Retrieval Settings"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </Show>
           </div>
         </div>
 

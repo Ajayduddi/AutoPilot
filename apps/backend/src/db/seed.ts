@@ -1,13 +1,22 @@
 /**
  * @fileoverview Database seed runner for local/dev bootstrap.
  *
- * Seeds baseline data required to use the platform quickly after migrations:
- * - An admin user account
- * - Representative workflows across supported providers
+ * High-level purpose:
+ * Database schema, bootstrap, and operational safety helpers for persistence runtime.
  *
- * @remarks
- * This script is idempotent for seeded keys/emails through upsert logic.
- * It is intended for development environments, not production data loading.
+ * Key Features (and trade-offs):
+ * - Defines schema/migration/seed and lifecycle utilities.
+ * - Supports preflight and integrity checks for production safety.
+ * - Provides shared DB access primitives for repositories.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Follow migration safety workflow before schema changes.
+ * 3. Keep destructive operations guarded and explicit.
+ * 4. Validate with DB preflight/typecheck as applicable.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import { db } from './index';
 import { users, workflows } from './schema';

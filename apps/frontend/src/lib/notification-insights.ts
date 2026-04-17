@@ -1,3 +1,27 @@
+/**
+ * @fileoverview apps/frontend/src/lib/notification-insights.ts
+ *
+ * High-level purpose:
+ * Frontend utility/integration module for API communication and shared client-side helper behavior.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Abstracts transport and formatting details from UI components.
+ * - Provides reusable helper contracts for request/response workflows.
+ * - Keeps client integration logic testable and centrally maintained.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import helper functions into components, routes, or contexts.
+ * 2. Compose utilities with domain-specific UI behavior in callers.
+ * 3. Update associated unit tests when changing helper contracts.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import type { InboxNotification } from "../context/notifications.context";
 
 /**

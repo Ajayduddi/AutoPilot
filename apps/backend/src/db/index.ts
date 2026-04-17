@@ -1,11 +1,22 @@
 /**
  * @fileoverview Database client bootstrap and lifecycle utilities.
  *
- * Creates the shared Drizzle client and exposes low-level Postgres access for
- * scripts/utilities that require direct driver operations.
+ * High-level purpose:
+ * Database schema, bootstrap, and operational safety helpers for persistence runtime.
  *
- * @remarks
- * This module is the single source of truth for backend DB connection setup.
+ * Key Features (and trade-offs):
+ * - Defines schema/migration/seed and lifecycle utilities.
+ * - Supports preflight and integrity checks for production safety.
+ * - Provides shared DB access primitives for repositories.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Follow migration safety workflow before schema changes.
+ * 3. Keep destructive operations guarded and explicit.
+ * 4. Validate with DB preflight/typecheck as applicable.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';

@@ -1,3 +1,27 @@
+/**
+ * @fileoverview apps/frontend/src/routes/notifications.tsx
+ *
+ * High-level purpose:
+ * Frontend route module that composes page-level UI, data loading, and user flows for navigation states.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates route-scoped layout and state transitions.
+ * - Coordinates API interactions with route-specific rendering behavior.
+ * - Supports responsive UX patterns for authenticated and guest flows.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Create or update route component exports for target navigation path.
+ * 2. Connect route logic to frontend API helpers and shared context providers.
+ * 3. Validate route behavior on desktop and mobile with route/e2e tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { Title } from "@solidjs/meta";
 import { useNavigate } from "@solidjs/router";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
@@ -8,6 +32,7 @@ import { usePanel } from "../context/panel.context";
 import { useMobileMenu } from "../context/mobile-menu.context";
 import { chatApi, workflowsApi } from "../lib/api";
 import { buildFollowUpDraft, getNotificationDisplayTitle, getWorkflowInsight } from "../lib/notification-insights";
+import { reportRuntimeError } from "../lib/runtime-reporter";
 
 /**
   * notification filter type alias.
@@ -151,6 +176,7 @@ export default function Notifications() {
   const navigate = useNavigate();
   const { openPanel } = usePanel();
   const mobileMenu = useMobileMenu();
+  const reportNotificationError = (message: string, error: unknown) => reportRuntimeError(message, error);
   const {
     notifications,
     loading,
@@ -254,7 +280,7 @@ export default function Notifications() {
    */
   async function handlePreview(notification: InboxNotification) {
     if (!notification.read) {
-      markRead(notification.id).catch((err: unknown) => console.error("Mark read failed:", err));
+      markRead(notification.id).catch((err: unknown) => reportNotificationError("Mark read failed:", err));
     }
 
     openPanel({
@@ -296,7 +322,7 @@ export default function Notifications() {
       const thread = await chatApi.createThread(threadTitle);
       navigate(`/threads/${thread.id}?draft=${encodeURIComponent(draft)}&autosend=1`);
     } catch (err) {
-      console.error("Follow-up thread creation failed:", err);
+      reportNotificationError("Follow-up thread creation failed:", err);
     }
   }
 
@@ -317,7 +343,7 @@ export default function Notifications() {
    */
   async function handleOpenRoute(notification: InboxNotification) {
     if (!notification.read) {
-      markRead(notification.id).catch((err: unknown) => console.error("Mark read failed:", err));
+      markRead(notification.id).catch((err: unknown) => reportNotificationError("Mark read failed:", err));
     }
 
     if (notification.type === "approval_request") {
@@ -334,7 +360,7 @@ export default function Notifications() {
           return;
         }
       } catch (err) {
-        console.error("Workflow route lookup failed:", err);
+        reportNotificationError("Workflow route lookup failed:", err);
       } finally {
         setRoutingId(null);
       }
@@ -365,7 +391,7 @@ export default function Notifications() {
     try {
       await markManyRead(ids);
     } catch (err) {
-      console.error("Mark all visible failed:", err);
+      reportNotificationError("Mark all visible failed:", err);
     } finally {
       setMarkingAll(false);
     }
@@ -393,7 +419,7 @@ export default function Notifications() {
       await clearAll();
       setShowClearAllModal(false);
     } catch (err) {
-      console.error("Clear all notifications failed:", err);
+      reportNotificationError("Clear all notifications failed:", err);
       await refresh();
     } finally {
       setClearingAll(false);
@@ -434,7 +460,7 @@ export default function Notifications() {
 
               <div class="flex items-center gap-2 md:gap-3 shrink-0">
                 <button
-                  onClick={() => enablePush().catch((err: unknown) => console.error("Enable push failed:", err))}
+                  onClick={() => enablePush().catch((err: unknown) => reportNotificationError("Enable push failed:", err))}
                   disabled={enablingPush() || pushPermission() === "granted"}
                   class={`p-2 rounded-lg border transition-all duration-200 flex items-center justify-center ${
                     enablingPush() || pushPermission() === "granted"
@@ -458,7 +484,7 @@ export default function Notifications() {
                 </button>
                 <Show when={pushPermission() === "granted"}>
                   <button
-                    onClick={() => testPush().catch((err: unknown) => console.error("Push test failed:", err))}
+                    onClick={() => testPush().catch((err: unknown) => reportNotificationError("Push test failed:", err))}
                     class="p-2 rounded-lg border border-neutral-700/70 text-neutral-400 hover:text-white hover:border-neutral-500 hover:bg-neutral-900/70 transition-all duration-200 flex items-center justify-center shrink-0"
                     title="Test push notification"
                   >
@@ -635,7 +661,7 @@ export default function Notifications() {
                                 : undefined
                             }
                             onFollowUp={getWorkflowInsight(notification) ? () => handleFollowUp(notification) : undefined}
-                            onMarkRead={() => markRead(notification.id).catch((err: unknown) => console.error("Mark read failed:", err))}
+                            onMarkRead={() => markRead(notification.id).catch((err: unknown) => reportNotificationError("Mark read failed:", err))}
                           />
                         )}
                       </For>

@@ -1,7 +1,10 @@
+/**
+ * @fileoverview End-to-end tests for workflow CRUD and execution route flows.
+ */
 import { afterEach, describe, expect, it } from "bun:test";
 import { workflowsRouter } from "../../src/routes/workflows.routes";
 import { buildApp, restoreMocks, withServer } from "./helpers/test-server";
-import { WorkflowService } from "../../src/services/workflow.service";
+import { WorkflowService } from "../../src/services/workflow/workflow.service";
 
 afterEach(() => {
   restoreMocks();

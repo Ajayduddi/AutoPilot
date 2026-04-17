@@ -1,7 +1,40 @@
+/**
+ * @fileoverview apps/frontend/src/routes/settings.tsx
+ *
+ * High-level purpose:
+ * Frontend route module that composes page-level UI, data loading, and user flows for navigation states.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates route-scoped layout and state transitions.
+ * - Coordinates API interactions with route-specific rendering behavior.
+ * - Supports responsive UX patterns for authenticated and guest flows.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Create or update route component exports for target navigation path.
+ * 2. Connect route logic to frontend API helpers and shared context providers.
+ * 3. Validate route behavior on desktop and mobile with route/e2e tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { Title } from "@solidjs/meta";
 import { useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, Show } from "solid-js";
-import { authApi, type AccountInfo, type RuntimePreferences, settingsApi } from "../lib/api";
+import {
+  authApi,
+  type AccountInfo,
+  type MfaStatus,
+  type ProviderModelCapabilities,
+  type RetrievalPreferences,
+  type RuntimePreferences,
+  type TotpSetup,
+  settingsApi,
+} from "../lib/api";
 import { SettingsSectionAccount } from "../components/settings/SettingsSectionAccount";
 import { SettingsSectionConnections } from "../components/settings/SettingsSectionConnections";
 import { SettingsSectionWebhooks } from "../components/settings/SettingsSectionWebhooks";
@@ -29,11 +62,18 @@ export default function Settings() {
 
   const [providers, { refetch }] = createResource(() => settingsApi.getProviders());
   const [account, { refetch: refetchAccount }] = createResource<AccountInfo>(() => authApi.getAccount());
+  const [mfaStatus, { refetch: refetchMfaStatus }] = createResource<MfaStatus>(() => authApi.getMfaStatus());
   const [webhookSecrets, { refetch: refetchWebhookSecrets }] = createResource<WebhookSecretRecord[]>(
     () => settingsApi.getWebhookSecrets(),
   );
   const [runtimePreferences, { refetch: refetchRuntimePreferences }] = createResource<RuntimePreferences>(
     () => settingsApi.getRuntimePreferences(),
+  );
+  const [retrievalPreferences, { refetch: refetchRetrievalPreferences }] = createResource<RetrievalPreferences>(
+    () => settingsApi.getRetrievalPreferences(),
+  );
+  const [providerModelCapabilities, { refetch: refetchProviderModelCapabilities }] = createResource<ProviderModelCapabilities>(
+    () => settingsApi.getProviderModelCapabilities({ embeddingOnly: true }),
   );
 
   const [isAdding, setIsAdding] = createSignal(false);
@@ -77,6 +117,15 @@ export default function Settings() {
   const [passwordSaving, setPasswordSaving] = createSignal(false);
   const [passwordError, setPasswordError] = createSignal("");
   const [approvalModeSaving, setApprovalModeSaving] = createSignal(false);
+  const [mfaSetup, setMfaSetup] = createSignal<TotpSetup | null>(null);
+  const [mfaCode, setMfaCode] = createSignal("");
+  const [mfaDisableCode, setMfaDisableCode] = createSignal("");
+  const [mfaDisablePassword, setMfaDisablePassword] = createSignal("");
+  const [mfaSaving, setMfaSaving] = createSignal(false);
+  const [mfaError, setMfaError] = createSignal("");
+  const [retrievalDraft, setRetrievalDraft] = createSignal<RetrievalPreferences | null>(null);
+  const [retrievalSaving, setRetrievalSaving] = createSignal(false);
+  const [retrievalError, setRetrievalError] = createSignal("");
   const activeSection = createMemo<SettingsSection>(() => {
     const legacy = mapLegacyTab(firstParam(searchParams.tab));
     return normalizeSection(firstParam(searchParams.section) ?? legacy ?? undefined);
@@ -102,7 +151,6 @@ export default function Settings() {
         provider: active.provider,
         providerId: active.id,
         baseUrl: active.baseUrl || undefined,
-        apiKey: active.apiKey || undefined,
       });
     },
   );
@@ -120,6 +168,15 @@ export default function Settings() {
     if (!value) return "Not set";
     if (value.toLowerCase() === "auto") return "Auto (Agent picks best model/provider)";
     return `${activeProviderName()}: ${value}`;
+  });
+  const currentDefaultModelDisplayLabel = createMemo(() => {
+    const active = activeProviderConfig();
+    if (!active) return "Not set";
+    const savedModel = String(active.model || "").trim();
+    if (!savedModel || savedModel.toLowerCase() === "dynamic" || savedModel.toLowerCase() === "auto") {
+      return "Auto (Agent picks best model/provider)";
+    }
+    return `${providerLabel(active.provider || "")}: ${savedModel}`;
   });
   const activeWebhookSecrets = createMemo(() =>
     (webhookSecrets() || []).filter((secret) => {
@@ -151,6 +208,8 @@ export default function Settings() {
     passwordCurrent().trim().length > 0 && passwordNext().length >= 8 && passwordNext() === passwordConfirm(),
   );
   const canSavePassword = createMemo(() => passwordFormValid() && !passwordSaving());
+  const mfaEnabled = createMemo(() => Boolean(mfaStatus()?.enabled));
+  const mfaPendingSetup = createMemo(() => Boolean(mfaSetup() || mfaStatus()?.pending));
 
   createEffect(() => {
     const data = account();
@@ -160,21 +219,288 @@ export default function Settings() {
     setEmailValue(data.email || "");
   });
 
-  /**
-   * Utility function to handle approval mode change.
-   *
-   * @remarks
-   * Frontend utility used by the web app UI.
-   * @param mode - Input value for handleApprovalModeChange.
-   * @returns Return value from handleApprovalModeChange.
-   *
-   * @example
-   * ```typescript
-   * const output = handleApprovalModeChange(value);
-   * console.log(output);
-   * ```
-   * @throws {Error} Propagates runtime failures from dependent operations.
-   */
+  createEffect(() => {
+    const data = retrievalPreferences();
+    if (!data) return;
+    setRetrievalDraft(data);
+    setRetrievalError("");
+  });
+
+  const localEmbeddingModelSet = new Set(["Xenova/bge-small-en-v1.5", "Xenova/all-MiniLM-L6-v2"]);
+  const retrievalModelProviderMap = createMemo(() => {
+    const map: Record<string, { provider: string; providerConfigId: string; connectionName: string }> = {
+      "Xenova/bge-small-en-v1.5": {
+        provider: "bge_local",
+        providerConfigId: "",
+        connectionName: "BGE Local",
+      },
+      "Xenova/all-MiniLM-L6-v2": {
+        provider: "minilm_local",
+        providerConfigId: "",
+        connectionName: "MiniLM Local",
+      },
+    };
+    for (const group of providerModelCapabilities() || []) {
+      if (group.status !== "ok") continue;
+      for (const model of group.models || []) {
+        const modelName = String(model.id || "").trim();
+        if (!modelName) continue;
+        map[modelName] = {
+          provider: group.provider,
+          providerConfigId: group.providerConfigId,
+          connectionName: group.connectionName,
+        };
+      }
+      const configured = String(group.configuredModel || "").trim();
+      if (configured) {
+        map[configured] = {
+          provider: group.provider,
+          providerConfigId: group.providerConfigId,
+          connectionName: group.connectionName,
+        };
+      }
+    }
+    return map;
+  });
+  function isEmbeddingModelCandidate(modelId: string, raw?: Record<string, unknown>): boolean {
+    const normalized = modelId.trim().toLowerCase();
+    if (!normalized) return false;
+    if (localEmbeddingModelSet.has(modelId.trim())) return true;
+    if (
+      normalized.includes("embedding")
+      || normalized.includes("embed")
+      || normalized.includes("bge")
+      || normalized.includes("minilm")
+      || normalized.includes("e5")
+      || normalized.includes("gte")
+    ) {
+      return true;
+    }
+
+    const methods = Array.isArray(raw?.supportedGenerationMethods)
+      ? raw.supportedGenerationMethods.map((v) => String(v || "").toLowerCase())
+      : [];
+    if (methods.some((m) => m.includes("embed"))) return true;
+    return false;
+  }
+
+  const retrievalModelOptions = createMemo(() => {
+    const options: Array<{ value: string; label: string }> = [
+      { value: "Xenova/bge-small-en-v1.5", label: "BGE Small (Local): Xenova/bge-small-en-v1.5" },
+      { value: "Xenova/all-MiniLM-L6-v2", label: "MiniLM (Local): Xenova/all-MiniLM-L6-v2" },
+    ];
+    const seen = new Set(options.map((item) => item.value));
+    for (const group of providerModelCapabilities() || []) {
+      if (group.status !== "ok") continue;
+      for (const model of group.models || []) {
+        const modelName = String(model.id || "").trim();
+        if (!modelName || seen.has(modelName) || localEmbeddingModelSet.has(modelName)) continue;
+        if (!isEmbeddingModelCandidate(modelName, model.raw)) continue;
+        seen.add(modelName);
+        options.push({
+          value: modelName,
+          label: `${group.connectionName}: ${modelName}`,
+        });
+      }
+      const configured = String(group.configuredModel || "").trim();
+      if (
+        configured
+        && !seen.has(configured)
+        && !localEmbeddingModelSet.has(configured)
+        && isEmbeddingModelCandidate(configured)
+      ) {
+        seen.add(configured);
+        options.push({
+          value: configured,
+          label: `${group.connectionName}: ${configured} (configured)`,
+        });
+      }
+    }
+    const current = retrievalDraft()?.embeddingModel?.trim();
+    if (current && !seen.has(current)) {
+      options.push({ value: current, label: `Current: ${current}` });
+    }
+    return options;
+  });
+
+  function splitModelDisplayLabel(fullLabel: string, providerName?: string) {
+    const label = String(fullLabel || "").trim();
+    const provider = String(providerName || "").trim();
+    if (!label) return { modelLabel: "Not set", badgeLabel: provider || "Unknown" };
+
+    const prefix = provider ? `${provider}:` : "";
+    if (prefix && label.startsWith(prefix)) {
+      return {
+        modelLabel: label.slice(prefix.length).trim(),
+        badgeLabel: provider || "Unknown",
+      };
+    }
+
+    const firstColon = label.indexOf(":");
+    if (firstColon > 0) {
+      return {
+        modelLabel: label.slice(firstColon + 1).trim(),
+        badgeLabel: label.slice(0, firstColon).trim(),
+      };
+    }
+
+    return {
+      modelLabel: label,
+      badgeLabel: provider || "Unknown",
+    };
+  }
+
+  const selectedRetrievalModelDisplay = createMemo(() => {
+    const draft = retrievalDraft();
+    if (!draft) return { modelLabel: "Not set", badgeLabel: "Unknown" };
+    const model = draft.embeddingModel.trim();
+    if (!model) return { modelLabel: "Not set", badgeLabel: "Unknown" };
+    const option = retrievalModelOptions().find((item) => item.value === model);
+    const source = retrievalModelProviderMap()[model];
+    const providerName = source?.connectionName || (draft.embeddingProvider === "bge_local" ? "BGE Local" : draft.embeddingProvider === "minilm_local" ? "MiniLM Local" : "API Provider");
+    return splitModelDisplayLabel(option?.label || model, providerName);
+  });
+
+  const savedRetrievalModelDisplay = createMemo(() => {
+    const saved = retrievalPreferences();
+    return splitModelDisplayLabel(
+      saved?.currentEmbeddingModelLabel || "Not set",
+      saved?.currentEmbeddingProviderLabel || "Unknown",
+    );
+  });
+
+  function inferEmbeddingProviderFromModel(model: string): RetrievalPreferences["embeddingProvider"] {
+    const normalized = model.trim();
+    const sourceProvider = retrievalModelProviderMap()[normalized]?.provider;
+    if (sourceProvider === "bge_local" || normalized === "Xenova/bge-small-en-v1.5") return "bge_local";
+    if (sourceProvider === "minilm_local" || normalized === "Xenova/all-MiniLM-L6-v2") return "minilm_local";
+    return "api";
+  }
+
+  function inferEmbeddingApiProviderFromModel(model: string): string {
+    const normalized = model.trim();
+    const sourceProvider = retrievalModelProviderMap()[normalized]?.provider;
+    if (sourceProvider === "bge_local" || sourceProvider === "minilm_local") return "";
+    return sourceProvider || "";
+  }
+
+  function inferEmbeddingApiProviderIdFromModel(model: string): string {
+    const normalized = model.trim();
+    return retrievalModelProviderMap()[normalized]?.providerConfigId || "";
+  }
+
+  const retrievalIsLocalProvider = createMemo(() => {
+    const draft = retrievalDraft();
+    if (!draft) return false;
+    const provider = inferEmbeddingProviderFromModel(draft.embeddingModel || "");
+    return provider === "bge_local" || provider === "minilm_local";
+  });
+  const retrievalValidationError = createMemo(() => {
+    const draft = retrievalDraft();
+    if (!draft) return "";
+    const inIntRange = (value: number, min: number, max: number) =>
+      Number.isInteger(value) && value >= min && value <= max;
+
+    if (!inIntRange(draft.embeddingsIndexBatchSize, 1, 512)) return "Index batch size must be 1-512.";
+    if (!inIntRange(draft.embeddingsRetryMaxAttempts, 1, 20)) return "Retry max attempts must be 1-20.";
+    if (!inIntRange(draft.embeddingsRetryBaseDelayMs, 10, 60000)) return "Retry base delay must be 10-60000 ms.";
+    if (!inIntRange(draft.embeddingVectorDimensions, 64, 4096)) return "Vector dimensions must be 64-4096.";
+    if (!draft.embeddingModel.trim()) return "Embedding model is required.";
+    if (!inIntRange(draft.embeddingMaxBatchSize, 1, 512)) return "Embedding max batch size must be 1-512.";
+    if (!inIntRange(draft.semanticSearchTopKDefault, 1, 100)) return "Semantic search top-k must be 1-100.";
+    if (Number.isNaN(draft.semanticSearchMinScore) || draft.semanticSearchMinScore < 0 || draft.semanticSearchMinScore > 1) {
+      return "Semantic search min score must be between 0 and 1.";
+    }
+    if (!inIntRange(draft.ragMaxChunks, 1, 100)) return "RAG max chunks must be 1-100.";
+    if (!inIntRange(draft.ragChunkTokenBudget, 64, 100000)) return "RAG chunk token budget must be 64-100000.";
+    return "";
+  });
+
+  const retrievalDirty = createMemo(() => {
+    const base = retrievalPreferences();
+    const draft = retrievalDraft();
+    if (!base || !draft) return false;
+    const normalize = (value: RetrievalPreferences) => ({
+      embeddingProvider: value.embeddingProvider,
+      embeddingApiProvider: value.embeddingApiProvider,
+      embeddingApiProviderId: value.embeddingApiProviderId,
+      embeddingsIndexBatchSize: value.embeddingsIndexBatchSize,
+      embeddingsRetryMaxAttempts: value.embeddingsRetryMaxAttempts,
+      embeddingsRetryBaseDelayMs: value.embeddingsRetryBaseDelayMs,
+      embeddingVectorDimensions: value.embeddingVectorDimensions,
+      embeddingModel: value.embeddingModel,
+      embeddingMaxBatchSize: value.embeddingMaxBatchSize,
+      embeddingCacheDir: value.embeddingCacheDir,
+      embeddingAllowRemoteModels: value.embeddingAllowRemoteModels,
+      embeddingQuantized: value.embeddingQuantized,
+      semanticSearchTopKDefault: value.semanticSearchTopKDefault,
+      semanticSearchMinScore: value.semanticSearchMinScore,
+      ragMaxChunks: value.ragMaxChunks,
+      ragChunkTokenBudget: value.ragChunkTokenBudget,
+    });
+    const changed = JSON.stringify(normalize(base)) !== JSON.stringify(normalize(draft));
+    return changed;
+  });
+
+  function updateRetrievalField<K extends keyof RetrievalPreferences>(key: K, value: RetrievalPreferences[K]) {
+    setRetrievalDraft((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, [key]: value };
+      if (key === "embeddingModel") {
+        next.embeddingProvider = inferEmbeddingProviderFromModel(String(value));
+        next.embeddingApiProvider = inferEmbeddingApiProviderFromModel(String(value));
+        next.embeddingApiProviderId = inferEmbeddingApiProviderIdFromModel(String(value));
+      }
+      return next;
+    });
+  }
+
+  async function handleSaveRetrieval() {
+    const draft = retrievalDraft();
+    if (!draft) return;
+    const validationError = retrievalValidationError();
+    if (validationError) {
+      setRetrievalError(validationError);
+      return;
+    }
+
+    try {
+      setRetrievalSaving(true);
+      setRetrievalError("");
+      const derivedProvider = inferEmbeddingProviderFromModel(draft.embeddingModel);
+      const derivedApiProvider = inferEmbeddingApiProviderFromModel(draft.embeddingModel);
+      const derivedApiProviderId = inferEmbeddingApiProviderIdFromModel(draft.embeddingModel);
+      const payload: Record<string, unknown> = {
+        embeddingProvider: derivedProvider,
+        embeddingApiProvider: derivedApiProvider,
+        embeddingApiProviderId: derivedApiProviderId,
+        embeddingsIndexBatchSize: draft.embeddingsIndexBatchSize,
+        embeddingsRetryMaxAttempts: draft.embeddingsRetryMaxAttempts,
+        embeddingsRetryBaseDelayMs: draft.embeddingsRetryBaseDelayMs,
+        embeddingVectorDimensions: draft.embeddingVectorDimensions,
+        embeddingModel: draft.embeddingModel.trim(),
+        embeddingMaxBatchSize: draft.embeddingMaxBatchSize,
+        embeddingCacheDir: draft.embeddingCacheDir.trim(),
+        embeddingAllowRemoteModels: draft.embeddingAllowRemoteModels,
+        embeddingQuantized: draft.embeddingQuantized,
+        semanticSearchTopKDefault: draft.semanticSearchTopKDefault,
+        semanticSearchMinScore: draft.semanticSearchMinScore,
+        ragMaxChunks: draft.ragMaxChunks,
+        ragChunkTokenBudget: draft.ragChunkTokenBudget,
+      };
+
+      await settingsApi.updateRetrievalPreferences(payload);
+      await refetchRetrievalPreferences();
+      pushNotice("success", "Retrieval settings updated.");
+    } catch (err: any) {
+      const message = err.message || "Failed to update retrieval settings.";
+      setRetrievalError(message);
+      pushNotice("error", message);
+    } finally {
+      setRetrievalSaving(false);
+    }
+  }
+
   async function handleApprovalModeChange(mode: "default" | "auto") {
     try {
       setApprovalModeSaving(true);
@@ -203,60 +529,15 @@ export default function Settings() {
     setDefaultModel(first);
   });
 
-  /**
-   * Utility function to set section.
-   *
-   * @remarks
-   * Frontend utility used by the web app UI.
-   * @param section - Input value for setSection.
-   * @returns Return value from setSection.
-   *
-   * @example
-   * ```typescript
-   * const output = setSection(value);
-   * console.log(output);
-   * ```
-   * @throws {Error} Propagates runtime failures from dependent operations.
-   */
   function setSection(section: SettingsSection) {
     setSearchParams({ section, tab: undefined as unknown as string });
   }
 
-  /**
-   * Utility function to push notice.
-   *
-   * @remarks
-   * Frontend utility used by the web app UI.
-   * @param tone - Input value for pushNotice.
-   * @param message - Input value for pushNotice.
-   * @returns Return value from pushNotice.
-   *
-   * @example
-   * ```typescript
-   * const output = pushNotice(value, value);
-   * console.log(output);
-   * ```
-   * @throws {Error} Propagates runtime failures from dependent operations.
-   */
   function pushNotice(tone: "success" | "error", message: string) {
     setPageNotice({ tone, message });
     window.setTimeout(() => setPageNotice(null), 2600);
   }
 
-  /**
-   * Utility function to reset form.
-   *
-   * @remarks
-   * Frontend utility used by the web app UI.
-   * @returns Return value from resetForm.
-   *
-   * @example
-   * ```typescript
-   * const output = resetForm();
-   * console.log(output);
-   * ```
-   * @throws {Error} Propagates runtime failures from dependent operations.
-   */
   function resetForm() {
     setProvider("ollama");
     setCustomName("");
@@ -265,20 +546,6 @@ export default function Settings() {
     setErrorMsg("");
   }
 
-  /**
-   * Utility function to handle save.
-   *
-   * @remarks
-   * Frontend utility used by the web app UI.
-   * @returns Return value from handleSave.
-   *
-   * @example
-   * ```typescript
-   * const output = handleSave();
-   * console.log(output);
-   * ```
-   * @throws {Error} Propagates runtime failures from dependent operations.
-   */
   async function handleSave() {
     try {
       setSaving(true);
@@ -293,6 +560,7 @@ export default function Settings() {
       setIsAdding(false);
       resetForm();
       await refetch();
+      await refetchProviderModelCapabilities();
       pushNotice("success", "Connection saved.");
     } catch (err: any) {
       const message = err.message || "Failed to save provider config";
@@ -303,46 +571,18 @@ export default function Settings() {
     }
   }
 
-  /**
-   * Utility function to handle set active.
-   *
-   * @remarks
-   * Frontend utility used by the web app UI.
-   * @param id - Input value for handleSetActive.
-   * @returns Return value from handleSetActive.
-   *
-   * @example
-   * ```typescript
-   * const output = handleSetActive(value);
-   * console.log(output);
-   * ```
-   * @throws {Error} Propagates runtime failures from dependent operations.
-   */
   async function handleSetActive(id: string) {
     try {
       await settingsApi.setActiveProvider(id);
       await refetch();
       await refetchActiveProviderModels();
+      await refetchProviderModelCapabilities();
       pushNotice("success", "Active provider updated.");
     } catch (err: any) {
       pushNotice("error", err.message || "Error setting active provider.");
     }
   }
 
-  /**
-   * Utility function to handle save default model.
-   *
-   * @remarks
-   * Frontend utility used by the web app UI.
-   * @returns Return value from handleSaveDefaultModel.
-   *
-   * @example
-   * ```typescript
-   * const output = handleSaveDefaultModel();
-   * console.log(output);
-   * ```
-   * @throws {Error} Propagates runtime failures from dependent operations.
-   */
   async function handleSaveDefaultModel() {
     const active = activeProviderConfig();
     const model = defaultModel().trim();
@@ -363,20 +603,6 @@ export default function Settings() {
     }
   }
 
-  /**
-   * Utility function to handle save profile.
-   *
-   * @remarks
-   * Frontend utility used by the web app UI.
-   * @returns Return value from handleSaveProfile.
-   *
-   * @example
-   * ```typescript
-   * const output = handleSaveProfile();
-   * console.log(output);
-   * ```
-   * @throws {Error} Propagates runtime failures from dependent operations.
-   */
   async function handleSaveProfile() {
     const name = profileName().trim();
     if (!name) {
@@ -402,20 +628,6 @@ export default function Settings() {
     }
   }
 
-  /**
-   * Utility function to handle save email.
-   *
-   * @remarks
-   * Frontend utility used by the web app UI.
-   * @returns Return value from handleSaveEmail.
-   *
-   * @example
-   * ```typescript
-   * const output = handleSaveEmail();
-   * console.log(output);
-   * ```
-   * @throws {Error} Propagates runtime failures from dependent operations.
-   */
   async function handleSaveEmail() {
     const email = emailValue().trim().toLowerCase();
     if (!email || !EMAIL_REGEX.test(email)) {
@@ -442,27 +654,17 @@ export default function Settings() {
     }
   }
 
-  /**
-   * Utility function to handle save password.
-   *
-   * @remarks
-   * Frontend utility used by the web app UI.
-   * @returns Return value from handleSavePassword.
-   *
-   * @example
-   * ```typescript
-   * const output = handleSavePassword();
-   * console.log(output);
-   * ```
-   * @throws {Error} Propagates runtime failures from dependent operations.
-   */
   async function handleSavePassword() {
     if (!passwordCurrent()) {
       setPasswordError("Current password is required.");
       return;
     }
-    if (!passwordNext() || passwordNext().length < 8) {
-      setPasswordError("New password must be at least 8 characters.");
+    if (!passwordNext() || passwordNext().length < 12) {
+      setPasswordError("New password must be at least 12 characters.");
+      return;
+    }
+    if (!/[A-Za-z]/.test(passwordNext()) || !/\d/.test(passwordNext())) {
+      setPasswordError("New password must include at least one letter and one number.");
       return;
     }
     if (passwordNext() !== passwordConfirm()) {
@@ -486,6 +688,87 @@ export default function Settings() {
       pushNotice("error", message);
     } finally {
       setPasswordSaving(false);
+    }
+  }
+
+  async function handleBeginTotpSetup() {
+    try {
+      setMfaSaving(true);
+      setMfaError("");
+      const setup = await authApi.beginTotpSetup();
+      setMfaSetup(setup);
+      setMfaCode("");
+      await refetchMfaStatus();
+      pushNotice("success", "Authenticator setup started.");
+    } catch (err: any) {
+      const message = err.message || "Failed to start TOTP setup.";
+      setMfaError(message);
+      pushNotice("error", message);
+    } finally {
+      setMfaSaving(false);
+    }
+  }
+
+  async function handleEnableTotp() {
+    const code = mfaCode().trim();
+    if (!code) {
+      setMfaError("Authenticator code is required.");
+      return;
+    }
+    try {
+      setMfaSaving(true);
+      setMfaError("");
+      await authApi.enableTotp({ code });
+      setMfaSetup(null);
+      setMfaCode("");
+      await Promise.all([refetchMfaStatus(), refetchAccount()]);
+      pushNotice("success", "TOTP MFA enabled.");
+    } catch (err: any) {
+      const message = err.message || "Failed to enable TOTP MFA.";
+      setMfaError(message);
+      pushNotice("error", message);
+    } finally {
+      setMfaSaving(false);
+    }
+  }
+
+  async function handleDisableTotp() {
+    const code = mfaDisableCode().trim();
+    if (!code) {
+      setMfaError("Authenticator code is required.");
+      return;
+    }
+    if (account()?.hasPassword && !mfaDisablePassword()) {
+      setMfaError("Current password is required to disable MFA.");
+      return;
+    }
+    try {
+      setMfaSaving(true);
+      setMfaError("");
+      await authApi.disableTotp({
+        code,
+        currentPassword: account()?.hasPassword ? mfaDisablePassword() : undefined,
+      });
+      setMfaDisableCode("");
+      setMfaDisablePassword("");
+      setMfaSetup(null);
+      await Promise.all([refetchMfaStatus(), refetchAccount()]);
+      pushNotice("success", "TOTP MFA disabled.");
+    } catch (err: any) {
+      const message = err.message || "Failed to disable TOTP MFA.";
+      setMfaError(message);
+      pushNotice("error", message);
+    } finally {
+      setMfaSaving(false);
+    }
+  }
+
+  async function handleCopyTotpSecret(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      pushNotice("success", "Copied to clipboard.");
+    } catch {
+      pushNotice("error", "Could not copy code.");
     }
   }
 
@@ -562,6 +845,7 @@ export default function Settings() {
       if (modal.kind === "delete-provider") {
         await settingsApi.deleteProvider(modal.id);
         await refetch();
+        await refetchProviderModelCapabilities();
         pushNotice("success", "Connection deleted.");
       } else {
         await settingsApi.revokeWebhookSecret(modal.id);
@@ -755,6 +1039,20 @@ export default function Settings() {
             passwordHasInput={passwordHasInput}
             canSavePassword={canSavePassword}
             handleSavePassword={handleSavePassword}
+            mfaStatus={mfaStatus}
+            mfaSetup={mfaSetup}
+            mfaCode={mfaCode}
+            setMfaCode={setMfaCode}
+            mfaDisableCode={mfaDisableCode}
+            setMfaDisableCode={setMfaDisableCode}
+            mfaDisablePassword={mfaDisablePassword}
+            setMfaDisablePassword={setMfaDisablePassword}
+            mfaSaving={mfaSaving}
+            mfaError={mfaError}
+            handleBeginTotpSetup={handleBeginTotpSetup}
+            handleEnableTotp={handleEnableTotp}
+            handleDisableTotp={handleDisableTotp}
+            handleCopyTotpSecret={handleCopyTotpSecret}
             runtimePreferences={runtimePreferences}
             runtimePreferencesLoading={() => Boolean(runtimePreferences.loading)}
             approvalModeSaving={approvalModeSaving}
@@ -782,6 +1080,7 @@ export default function Settings() {
             savingDefaultModel={savingDefaultModel}
             defaultModelError={defaultModelError}
             defaultModelDisplayLabel={defaultModelDisplayLabel}
+            currentDefaultModelDisplayLabel={currentDefaultModelDisplayLabel}
             activeProviderConfig={activeProviderConfig}
             activeProviderName={activeProviderName}
             activeProviderModelsLoading={() => Boolean(activeProviderModels.loading)}
@@ -791,6 +1090,20 @@ export default function Settings() {
             handleSaveDefaultModel={handleSaveDefaultModel}
             handleSetActive={handleSetActive}
             requestDeleteProvider={requestDeleteProvider}
+            retrievalPreferencesLoading={() => Boolean(retrievalPreferences.loading)}
+            retrievalPreferences={retrievalPreferences}
+            retrievalDraft={retrievalDraft}
+            retrievalModelOptions={retrievalModelOptions}
+            retrievalModelOptionsLoading={() => Boolean(providerModelCapabilities.loading)}
+            selectedRetrievalModelDisplay={selectedRetrievalModelDisplay}
+            savedRetrievalModelDisplay={savedRetrievalModelDisplay}
+            updateRetrievalField={updateRetrievalField}
+            retrievalSaving={retrievalSaving}
+            retrievalError={retrievalError}
+            retrievalValidationError={retrievalValidationError}
+            retrievalDirty={retrievalDirty}
+            retrievalIsLocalProvider={retrievalIsLocalProvider}
+            handleSaveRetrieval={handleSaveRetrieval}
           />
         </Show>
 

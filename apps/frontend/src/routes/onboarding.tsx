@@ -1,3 +1,27 @@
+/**
+ * @fileoverview apps/frontend/src/routes/onboarding.tsx
+ *
+ * High-level purpose:
+ * Frontend route module that composes page-level UI, data loading, and user flows for navigation states.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates route-scoped layout and state transitions.
+ * - Coordinates API interactions with route-specific rendering behavior.
+ * - Supports responsive UX patterns for authenticated and guest flows.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Create or update route component exports for target navigation path.
+ * 2. Connect route logic to frontend API helpers and shared context providers.
+ * 3. Validate route behavior on desktop and mobile with route/e2e tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { Title } from "@solidjs/meta";
 import { useNavigate } from "@solidjs/router";
 import { createEffect, createSignal, Show } from "solid-js";
@@ -39,7 +63,10 @@ export default function OnboardingPage() {
     e.preventDefault();
     setLocalError("");
     if (!email().trim()) return setLocalError("Email is required.");
-    if (password().length < 8) return setLocalError("Password must be at least 8 characters.");
+    if (password().length < 12) return setLocalError("Password must be at least 12 characters.");
+    if (!/[A-Za-z]/.test(password()) || !/\d/.test(password())) {
+      return setLocalError("Password must include at least one letter and one number.");
+    }
     if (password() !== confirmPassword()) return setLocalError("Passwords do not match.");
     setSubmitting(true);
     try {
@@ -71,7 +98,7 @@ export default function OnboardingPage() {
       <div class="w-full max-w-[440px] rounded-3xl border border-neutral-800/60 bg-[#121212] p-8 sm:p-10 shadow-2xl">
         <div class="mb-8 flex justify-center">
           <div class="w-14 h-14 rounded-3xl bg-indigo-600/20 border border-indigo-500/20 flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.15)]">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
           </div>
         </div>
         <h1 class="text-[26px] font-semibold tracking-tight text-white text-center">Create account</h1>
@@ -79,8 +106,9 @@ export default function OnboardingPage() {
 
         <form class="mt-8 space-y-4" onSubmit={submitOnboarding}>
           <div class="space-y-1.5">
-            <label class="text-[13px] font-medium text-neutral-400 pl-1">Name <span class="text-neutral-600 font-normal">(optional)</span></label>
+            <label class="text-[13px] font-medium text-neutral-400 pl-1" for="onboard-name">Name <span class="text-neutral-600 font-normal">(optional)</span></label>
             <input
+              id="onboard-name"
               type="text"
               value={name()}
               onInput={(ev) => setName(ev.currentTarget.value)}
@@ -89,8 +117,9 @@ export default function OnboardingPage() {
             />
           </div>
           <div class="space-y-1.5 pt-1">
-            <label class="text-[13px] font-medium text-neutral-400 pl-1">Email</label>
+            <label class="text-[13px] font-medium text-neutral-400 pl-1" for="onboard-email">Email</label>
             <input
+              id="onboard-email"
               type="email"
               value={email()}
               onInput={(ev) => setEmail(ev.currentTarget.value)}
@@ -100,18 +129,20 @@ export default function OnboardingPage() {
           </div>
           <div class="grid grid-cols-2 gap-4 pt-1">
             <div class="space-y-1.5">
-              <label class="text-[13px] font-medium text-neutral-400 pl-1">Password</label>
+              <label class="text-[13px] font-medium text-neutral-400 pl-1" for="onboard-password">Password</label>
               <input
+                id="onboard-password"
                 type="password"
                 value={password()}
                 onInput={(ev) => setPassword(ev.currentTarget.value)}
-                placeholder="Min 8 chars"
+                placeholder="Min 12 chars"
                 class="h-12 w-full rounded-xl border border-neutral-800 bg-[#1a1a1a] px-4 text-[15px] text-neutral-100 outline-none focus:border-neutral-600 focus:bg-[#1f1f1f] transition-all placeholder:text-neutral-600"
               />
             </div>
             <div class="space-y-1.5">
-              <label class="text-[13px] font-medium text-neutral-400 pl-1">Confirm</label>
+              <label class="text-[13px] font-medium text-neutral-400 pl-1" for="onboard-confirm">Confirm</label>
               <input
+                id="onboard-confirm"
                 type="password"
                 value={confirmPassword()}
                 onInput={(ev) => setConfirmPassword(ev.currentTarget.value)}
@@ -145,7 +176,7 @@ export default function OnboardingPage() {
             onClick={startGoogleAuth}
             class="h-12 w-full flex items-center justify-center gap-3 rounded-xl border border-neutral-700 bg-[#1a1a1a] text-[15px] text-neutral-200 font-medium hover:text-white hover:bg-[#1f1f1f] hover:border-neutral-600 transition-all"
           >
-            <svg class="h-5 w-5" viewBox="0 0 24 24">
+            <svg aria-hidden="true" class="h-5 w-5" viewBox="0 0 24 24">
               <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
               <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
@@ -156,7 +187,7 @@ export default function OnboardingPage() {
         </Show>
 
         <Show when={localError()}>
-          <div class="mt-6 rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-center">
+          <div class="mt-6 rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-center" role="alert" aria-live="assertive" id="onboard-error">
             <p class="text-[13px] text-red-400 font-medium">{localError()}</p>
           </div>
         </Show>

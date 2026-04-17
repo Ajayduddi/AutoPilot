@@ -2,6 +2,26 @@
 
 Canonical operating guide for AI coding agents in this repository.
 
+This file is the shared source of truth for all coding agents used in this repo, including:
+
+- Codex
+- Claude Code
+- Antigravity
+- Copilot
+
+If an agent can read repository instructions, it should follow this file first unless a higher-priority platform/system instruction explicitly overrides it.
+
+## 0) How To Use This File
+
+- Treat this document as repository policy, not optional guidance.
+- Prefer the most conservative interpretation when an instruction could affect production safety, security, data integrity, or deployment behavior.
+- When in doubt:
+  1. preserve existing behavior
+  2. keep changes minimal and well-scoped
+  3. run validation for touched areas
+  4. report tradeoffs clearly
+- Do not optimize for speed at the cost of correctness, security, or production readiness.
+
 ## 1) Repository Overview
 
 - Monorepo managed with **Bun workspaces**.
@@ -15,6 +35,18 @@ Canonical operating guide for AI coding agents in this repository.
 
 - Backend routes: `apps/backend/src/routes/*`
 - Backend services/orchestration: `apps/backend/src/services/*`
+  - Family folders now exist for larger backend domains:
+    - `apps/backend/src/services/ai-routing/*`
+    - `apps/backend/src/services/orchestrator/*`
+    - `apps/backend/src/services/context/*`
+    - `apps/backend/src/services/settings/*`
+    - `apps/backend/src/services/attachments/*`
+    - `apps/backend/src/services/retrieval/*`
+    - `apps/backend/src/services/notifications/*`
+    - `apps/backend/src/services/extraction/*`
+    - `apps/backend/src/services/telemetry/*`
+    - `apps/backend/src/services/workflow/*`
+    - `apps/backend/src/services/auth/*`
 - Backend repositories/data access: `apps/backend/src/repositories/*`
 - LLM providers: `apps/backend/src/providers/llm/*`
 - Workflow providers: `apps/backend/src/providers/workflow/*`
@@ -115,6 +147,14 @@ CI currently enforces:
 8. **Bun runtime is mandatory across this repository**: prefer Bun-native APIs/utilities for filesystem, crypto, path/process/runtime operations.
 9. **Do not introduce new `node:*` runtime modules** (`node:fs`, `node:path`, `node:crypto`, etc.) when a Bun-native equivalent exists.
 10. If existing code uses Node runtime modules in touched files, migrate those touched paths to Bun-native APIs as part of the same change unless blocked by a third-party library contract.
+11. Always prefer **production-grade code** over quick patches:
+   - fail safely
+   - validate inputs
+   - avoid hidden fallbacks in production paths
+   - keep security-sensitive config centralized
+12. Do not add new localhost, test-only, or dev-only defaults to production code paths unless they are explicitly guarded and documented as local-only behavior.
+13. Do not weaken CI, audit, auth, secret handling, cookie security, webhook verification, or readiness validation to make tests pass.
+14. If a test fixture breaks because production hardening became stricter, update the fixture to reflect the new contract instead of weakening the contract.
 
 ## 7) Style and Conventions (Inferred from Code)
 
@@ -124,6 +164,13 @@ CI currently enforces:
 - Naming:
   - backend modules: `*.service.ts`, `*.routes.ts`, `*.repo.ts`
   - frontend components: PascalCase file names
+- Structure:
+  - Keep backend layering: `routes -> services -> repositories`
+  - Prefer grouping larger backend domains into family folders under `apps/backend/src/services/<domain>/*`
+  - Mirror focused tests under matching folders where practical:
+    - `apps/backend/test/services/<domain>/*`
+    - `apps/backend/test/e2e/<domain>/*`
+  - Keep small standalone services flat unless they have clearly grown into a multi-file domain
 - String quote style is mixed in repo. Match local file style when editing.
 
 ## 8) Dependency Policy
@@ -150,6 +197,8 @@ CI currently enforces:
 - Frontend is built to static assets and served by backend (`FRONTEND_STATIC_DIR`).
 - Current container entrypoint is backend direct command in `Dockerfile`.
 - `scripts/start-all.sh` is legacy helper; Docker runtime does not depend on it.
+- Production config must not rely on implicit localhost fallbacks.
+- Dev-local examples belong in docs, tests, or explicitly guarded local code paths only.
 
 ## 11) Playbooks for Common Tasks
 
@@ -196,3 +245,5 @@ CI currently enforces:
 - Report validations actually executed.
 - Call out risks and tradeoffs directly.
 - If blocked, explain blocker, attempts, and safest next step.
+- If the change improves hardening or production readiness, say so explicitly.
+- If residual risk remains, state what is still unresolved and why.

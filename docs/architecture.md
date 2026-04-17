@@ -126,6 +126,17 @@ apps/
       repositories/  persistence
       routes/        API endpoints
       services/      orchestration + domain logic
+        ai-routing/   provider routing + LLM fallback + main-agent decisioning
+        orchestrator/  chat orchestration + follow-up routing + answer shaping
+        context/       hybrid memory + prompt context + insights + workflow cache
+        settings/      provider settings + model discovery
+        attachments/   upload storage + scanning + extraction orchestration
+        retrieval/     embeddings + semantic search + RAG + recommendations
+        notifications/ in-app notifications + push delivery + event bus
+        extraction/    document/pdf/image text extraction and OCR
+        telemetry/     ReAct analytics + frontend runtime telemetry ingestion
+        workflow/      workflow execution + callback summarization
+        auth/          auth/session logic
     test/            config/middleware/services/e2e
   frontend/
     src/

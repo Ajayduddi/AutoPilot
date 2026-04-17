@@ -1,13 +1,33 @@
-import { Show } from "solid-js";
+/**
+ * @fileoverview Shared chat bubble wrapper for assistant/user message variants.
+ *
+ * High-level purpose:
+ * Reusable frontend presentation module for rendering chat, settings, and UI primitives across routes.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates reusable UI logic behind typed component contracts.
+ * - Supports composable view patterns with minimal route coupling.
+ * - Balances readability and flexibility for evolving product surfaces.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import the component into route or parent composition layers.
+ * 2. Pass required typed props and wire callbacks to domain actions.
+ * 3. Confirm visual and interaction behavior with component tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { AssistantMessage } from "./AssistantMessage";
 import { UserMessage } from "./UserMessage";
 import { WorkflowCard } from "./WorkflowCard";
 import type { ActionItem, AssistantBlock, MessageState, TaskCardBlock, WorkflowStatus, WorkflowStatusBlock } from "./types";
 import type { ChatAttachmentDto } from "@autopilot/shared";
 
-/**
- * Interface describing message bubble props shape.
- */
 interface MessageBubbleProps {
   messageId?: string;
   role: "user" | "assistant" | "system";
@@ -26,19 +46,7 @@ interface MessageBubbleProps {
 }
 
 /**
- * Utility function to get system status.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @param content - Input value for getSystemStatus.
- * @returns Return value from getSystemStatus.
- *
- * @example
- * ```typescript
- * const output = getSystemStatus(value);
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
+ * Derives a workflow status badge from plain system-text updates.
  */
 function getSystemStatus(content?: string): WorkflowStatus | null {
   const lower = (content || "").toLowerCase();
@@ -50,19 +58,7 @@ function getSystemStatus(content?: string): WorkflowStatus | null {
 }
 
 /**
- * Utility function to get run id.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @param content - Input value for getRunId.
- * @returns Return value from getRunId.
- *
- * @example
- * ```typescript
- * const output = getRunId(value);
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
+ * Best-effort extractor for run identifiers from system message text.
  */
 function getRunId(content?: string) {
   const match = (content || "").match(/run[_-][a-zA-Z0-9_-]+/);
@@ -70,19 +66,7 @@ function getRunId(content?: string) {
 }
 
 /**
- * Utility function to message bubble.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @param props - Input value for MessageBubble.
- * @returns Return value from MessageBubble.
- *
- * @example
- * ```typescript
- * const output = MessageBubble(value);
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
+ * Role-aware message bubble dispatcher for user, assistant, and system rows.
  */
 export function MessageBubble(props: MessageBubbleProps) {
   if (props.role === "user") {

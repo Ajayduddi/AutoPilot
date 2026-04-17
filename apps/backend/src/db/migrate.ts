@@ -1,3 +1,23 @@
+/**
+ * @fileoverview apps/backend/src/db/migrate.ts
+ *
+ * High-level purpose:
+ * Database schema, bootstrap, and operational safety helpers for persistence runtime.
+ *
+ * Key Features (and trade-offs):
+ * - Defines schema/migration/seed and lifecycle utilities.
+ * - Supports preflight and integrity checks for production safety.
+ * - Provides shared DB access primitives for repositories.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Follow migration safety workflow before schema changes.
+ * 3. Keep destructive operations guarded and explicit.
+ * 4. Validate with DB preflight/typecheck as applicable.
+ * 5. Keep documentation aligned with behavior and tests.
+ */
 import { migrate as runMigrations } from 'drizzle-orm/postgres-js/migrator';
 import { closeDbConnection, db, dbClient } from './index';
 

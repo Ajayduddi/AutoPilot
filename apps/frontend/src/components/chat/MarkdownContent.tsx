@@ -1,37 +1,37 @@
+/**
+ * @fileoverview Safe markdown rendering wrapper used across chat responses.
+ *
+ * High-level purpose:
+ * Reusable frontend presentation module for rendering chat, settings, and UI primitives across routes.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates reusable UI logic behind typed component contracts.
+ * - Supports composable view patterns with minimal route coupling.
+ * - Balances readability and flexibility for evolving product surfaces.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import the component into route or parent composition layers.
+ * 2. Pass required typed props and wire callbacks to domain actions.
+ * 3. Confirm visual and interaction behavior with component tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { Show, createEffect, createMemo, createSignal } from "solid-js";
 import { SolidMarkdown } from "solid-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import { normalizeFencedHtmlBlocks, normalizeLooseListMarkdown } from "./markdown-normalize";
 
-/**
- * Interface describing markdown content props shape.
- */
 interface MarkdownContentProps {
   content: string;
 }
 
-/**
- * Utility function to normalize fenced html blocks.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @param markdown - Input value for normalizeFencedHtmlBlocks.
- * @returns Return value from normalizeFencedHtmlBlocks.
- *
- * @example
- * ```typescript
- * const output = normalizeFencedHtmlBlocks(value);
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
- */
-function normalizeFencedHtmlBlocks(markdown: string): string {
-  return markdown.replace(/```(html|xml|xhtml|jsx|tsx)[^\n]*\r?\n([\s\S]*?)```/gi, (full, _lang, body) => {
-    // Improve readability for compact markup samples like </p></div>.
-    const normalizedBody = String(body).replace(/>([ \t]*)<\//g, ">\n</");
-    return full.replace(body, normalizedBody);
-  });
-}
 const MAX_COPY_CHARS = 120_000;
 const TABLE_PROGRESSIVE_THRESHOLD = 40;
 const TABLE_PROGRESSIVE_STEP = 80;
@@ -39,19 +39,7 @@ const TABLE_VERY_LARGE_THRESHOLD = 700;
 const semanticColumnClassCache = new Map<string, string[]>();
 
 /**
- * Utility function to cap copy payload.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @param value - Input value for capCopyPayload.
- * @returns Return value from capCopyPayload.
- *
- * @example
- * ```typescript
- * const output = capCopyPayload(value);
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
+ * Caps clipboard payload length for very large markdown/table content.
  */
 function capCopyPayload(value: string): { text: string; truncated: boolean } {
   const text = String(value || "");
@@ -60,22 +48,15 @@ function capCopyPayload(value: string): { text: string; truncated: boolean } {
 }
 
 /**
- * Utility function to markdown content.
+ * Safe markdown rendering component with syntax highlight, copy affordances,
+ * and progressive large-table rendering.
  *
  * @remarks
- * Frontend utility used by the web app UI.
- * @param props - Input value for MarkdownContent.
- * @returns Return value from MarkdownContent.
- *
- * @example
- * ```typescript
- * const output = MarkdownContent(value);
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
+ * HTML is skipped by design and fenced-html-like content is normalized before
+ * render to reduce unsafe output shape variability.
  */
 export function MarkdownContent(props: MarkdownContentProps) {
-  const content = createMemo(() => normalizeFencedHtmlBlocks(props.content ?? ""));
+  const content = createMemo(() => normalizeLooseListMarkdown(normalizeFencedHtmlBlocks(props.content ?? "")));
   const getSemanticColumnClass = (label: string) => {
     const normalized = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
     if (!normalized) return "";

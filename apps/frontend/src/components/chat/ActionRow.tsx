@@ -1,9 +1,30 @@
+/**
+ * @fileoverview Renders contextual action buttons under assistant messages.
+ *
+ * High-level purpose:
+ * Reusable frontend presentation module for rendering chat, settings, and UI primitives across routes.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates reusable UI logic behind typed component contracts.
+ * - Supports composable view patterns with minimal route coupling.
+ * - Balances readability and flexibility for evolving product surfaces.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import the component into route or parent composition layers.
+ * 2. Pass required typed props and wire callbacks to domain actions.
+ * 3. Confirm visual and interaction behavior with component tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { For, Show, createSignal } from "solid-js";
 import type { ActionItem } from "./types";
 
-/**
- * Interface describing action row props shape.
- */
 interface ActionRowProps {
   items: ActionItem[];
   onAction?: (action: ActionItem) => void | Promise<void>;
@@ -16,18 +37,7 @@ const variantClass: Record<NonNullable<ActionItem["variant"]>, string> = {
 };
 
 /**
- * Utility function to spinner.
- *
- * @remarks
- * Frontend utility used by the web app UI.
- * @returns Return value from Spinner.
- *
- * @example
- * ```typescript
- * const output = Spinner();
- * console.log(output);
- * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
+ * Compact spinner icon used while an action is being executed.
  */
 function Spinner() {
   return (
@@ -39,19 +49,19 @@ function Spinner() {
 }
 
 /**
- * Utility function to action row.
+ * Renders a row of actionable assistant controls with built-in loading lock.
  *
  * @remarks
- * Frontend utility used by the web app UI.
- * @param props - Input value for ActionRow.
- * @returns Return value from ActionRow.
+ * Only one action can run at a time. While one action is pending, all others
+ * are disabled to prevent duplicate submissions.
  *
  * @example
- * ```typescript
- * const output = ActionRow(value);
- * console.log(output);
+ * ```tsx
+ * <ActionRow
+ *   items={[{ id: "retry", label: "Retry", variant: "secondary" }]}
+ *   onAction={async (item) => handleAction(item.id)}
+ * />
  * ```
- * @throws {Error} Propagates runtime failures from dependent operations.
  */
 export function ActionRow(props: ActionRowProps) {
   const [loadingId, setLoadingId] = createSignal<string | null>(null);

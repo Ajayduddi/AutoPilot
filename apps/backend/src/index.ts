@@ -1,7 +1,22 @@
 /**
- * @fileoverview index.
+ * @fileoverview apps/backend/src/index.ts
  *
- * Backend bootstrap, middleware wiring, route registration, and graceful shutdown.
+ * High-level purpose:
+ * Backend application bootstrap and runtime composition entrypoint.
+ *
+ * Key Features (and trade-offs):
+ * - Composes middleware, routes, and startup/shutdown lifecycle handling.
+ * - Enforces production safety checks before accepting traffic.
+ * - Centralizes runtime wiring for auth, security, and telemetry dependencies.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Use this as the main server startup path.
+ * 3. Keep orchestration logic in services/routes, not in bootstrap wiring.
+ * 4. Validate startup changes with backend typecheck and smoke routes.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import express from 'express';
 import cors from 'cors';
@@ -13,6 +28,8 @@ import { notificationsRouter } from './routes/notifications.routes';
 import { webhooksRouter } from './routes/webhooks.routes';
 import { workflowRunsRouter } from './routes/workflow-runs.routes';
 import { settingsRouter } from './routes/settings.routes';
+import { searchRouter } from './routes/search.routes';
+import { recommendationsRouter } from './routes/recommendations.routes';
 import { traceMiddleware } from './middleware/trace.middleware';
 import { errorMiddleware } from './middleware/error.middleware';
 import { authRouter } from './routes/auth.routes';
@@ -20,30 +37,31 @@ import { authMiddleware, requireAuth } from './middleware/auth.middleware';
 import { csrfMiddleware } from './middleware/csrf.middleware';
 import { rateLimit } from './middleware/rate-limit.middleware';
 import { UserRepo } from './repositories/user.repo';
-import { getRuntimeConfig } from './config/runtime.config';
+import { getRuntimeConfig, primeRuntimeConfigCache } from './config/runtime.config';
 import { securityHeadersMiddleware } from './middleware/security-headers.middleware';
 import { logger } from './util/logger';
 import { closeDbConnection } from './db';
 import { flushMetricsExporter, stopMetricsExporter } from './util/metrics';
 import { ChatRepo } from './repositories/chat.repo';
-import type { Server } from 'http';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const IS_PROD = process.env.NODE_ENV === 'production';
+const TRUST_PROXY = process.env.TRUST_PROXY?.trim();
+const runtimeConfig = getRuntimeConfig();
 
 if (IS_PROD) {
   const missing: string[] = [];
   if (!process.env.AUTH_COOKIE_SECRET || process.env.AUTH_COOKIE_SECRET === 'dev_auth_secret_change_me') {
     missing.push('AUTH_COOKIE_SECRET');
   }
-  if (!process.env.FRONTEND_ORIGIN) {
+  if (!runtimeConfig.auth.frontendOrigin) {
     missing.push('FRONTEND_ORIGIN');
   }
   if (!process.env.DATABASE_URL) {
     missing.push('DATABASE_URL');
   }
-  if (!process.env.PROVIDER_API_KEY_ENCRYPTION_KEY || process.env.PROVIDER_API_KEY_ENCRYPTION_KEY.trim().length < 32) {
+  if (!runtimeConfig.providerKeyCrypto.encryptionKey || runtimeConfig.providerKeyCrypto.encryptionKey.trim().length < 32) {
     missing.push('PROVIDER_API_KEY_ENCRYPTION_KEY(>=32 chars)');
   }
   if (missing.length > 0) {
@@ -51,7 +69,11 @@ if (IS_PROD) {
   }
 }
 
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
+const FRONTEND_ORIGIN = runtimeConfig.auth.frontendOrigin;
+if (TRUST_PROXY) {
+  const numeric = Number(TRUST_PROXY);
+  app.set('trust proxy', Number.isFinite(numeric) && TRUST_PROXY !== '' ? numeric : TRUST_PROXY);
+}
 app.disable('x-powered-by');
 app.use(cors({
   origin: FRONTEND_ORIGIN,
@@ -70,6 +92,8 @@ app.use('/api/auth', authRouter);
 app.use('/api/chat', requireAuth, chatRouter);
 app.use('/api/workflows', requireAuth, workflowsRouter);
 app.use('/api/workflow-runs', requireAuth, workflowRunsRouter);
+app.use('/api/search', requireAuth, searchRouter);
+app.use('/api/recommendations', requireAuth, recommendationsRouter);
 app.use('/api/approvals', approvalsRouter);
 app.use('/api/notifications', requireAuth, notificationsRouter);
 app.use('/api/webhooks', webhooksRouter);
@@ -115,7 +139,7 @@ type BunRuntime = {
 // Must be the last middleware
 app.use(errorMiddleware);
 
-let server: Server | null = null;
+let server: ReturnType<typeof app.listen> | null = null;
 let shuttingDown = false;
 
 /**
@@ -166,7 +190,7 @@ async function gracefulShutdown(signal: string) {
  * @throws {Error} When schema initialization or server startup fails.
  */
 async function bootstrap() {
-  await UserRepo.initSchemaIfNeeded();
+  await primeRuntimeConfigCache();
   await ChatRepo.assertAttachmentSchemaReady();
   const staticFrontendDir = process.env.FRONTEND_STATIC_DIR?.trim();
   if (staticFrontendDir) {

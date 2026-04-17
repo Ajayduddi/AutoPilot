@@ -1,7 +1,27 @@
 /**
  * @fileoverview providers/llm/openai.provider.
  *
- * External provider adapters and interfaces for LLMs and workflow engines.
+ * High-level purpose:
+ * Production adapter that translates internal LLM calls into OpenAI Chat
+ * Completions API requests with schema-validated outputs.
+ * Business value: enables reliable OpenAI model access with consistent token
+ * accounting and structured-output support for automation workflows.
+ * System impact: primary implementation path for OpenAI-family providers in
+ * runtime routing and model execution.
+ *
+ * Key Features (and trade-offs):
+ * - Supports both plain text and strict JSON-schema response formats.
+ * - Optional image payload handling by embedding image_url content blocks.
+ * - Token usage extraction and normalization into shared usage shape.
+ * - Defensive parsing/repair for structured JSON responses.
+ * - Trade-off: OpenAI response-shape coupling requires upkeep when API evolves.
+ *
+ * Usage Guide:
+ * 1. Instantiate via `new OpenAIProvider({ apiKey, model, baseURL? })`.
+ * 2. Call `generateResponse(prompt, options?)` for standard completions.
+ * 3. Call `generateStructuredResponse(prompt, schema, options?)` for JSON.
+ * 4. Keep schemas strict and deterministic for robust extraction flows.
+ * 5. Monitor usage metrics returned in `AIResponse.usage`.
  */
 import {
   ILLMProvider,
@@ -13,6 +33,7 @@ import {
   LlmResponseMode,
 } from './provider.interface';
 import { logger } from '../../util/logger';
+import { bytesToBase64 } from '../../util/byte-utils';
 
 /**
  * OpenAIProvider class.
@@ -43,7 +64,7 @@ export class OpenAIProvider implements ILLMProvider {
   }
 
     private toBase64(bytes: Uint8Array): string {
-    return Buffer.from(bytes).toString('base64');
+    return bytesToBase64(bytes);
   }
 
   private safeJsonParse<T>(text: string): T | null {

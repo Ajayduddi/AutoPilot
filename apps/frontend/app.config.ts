@@ -1,3 +1,27 @@
+/**
+ * @fileoverview apps/frontend/app.config.ts
+ *
+ * High-level purpose:
+ * Frontend configuration module defining runtime/build/test behavior for the application lifecycle.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Centralizes framework and tooling configuration defaults.
+ * - Supports environment-specific behavior through typed options.
+ * - Improves reproducibility across local and CI execution.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Update configuration values for target environment needs.
+ * 2. Keep config changes aligned with scripts and project docs.
+ * 3. Validate by running associated frontend build/test commands.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { defineConfig } from "@solidjs/start/config";
 
 export default defineConfig({
@@ -10,6 +34,11 @@ export default defineConfig({
     }
   },
   vite: {
+    build: {
+      // Vinxi expects a top-level manifest.json for each router output.
+      // Vite 6 defaults to .vite/manifest.json, which can break Vinxi post-build reads.
+      manifest: "manifest.json",
+    },
     resolve: {
       alias: {
         // Bun + Vite can load debug's browser CJS file as ESM without default export.

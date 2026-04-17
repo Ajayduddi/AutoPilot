@@ -11,6 +11,9 @@
     @apply bg-[#0a0a0a] text-neutral-100 antialiased h-screen overflow-hidden;
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
+    /* Ensure bold/semibold renders even when a weight file is missing */
+    font-synthesis: weight style;
+    text-rendering: optimizeLegibility;
   }
 }
 
@@ -71,6 +74,16 @@ select option {
 select option:checked {
   background-color: #2563eb;
   color: #fff;
+}
+
+/* Remove browser spinner controls for number fields where we want consistent styling */
+.no-spinner {
+  appearance: textfield;
+}
+.no-spinner::-webkit-outer-spin-button,
+.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /* ─── Assistant block progressive entrance ──────────────────────────────────
@@ -252,7 +265,7 @@ select option:checked {
   color: #f1f5f9;
   font-size: 1em;
   line-height: 1.88;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", ui-sans-serif, system-ui, sans-serif;
   max-width: none !important;
   width: 100%;
   margin: 0 !important;
@@ -402,6 +415,27 @@ select option:checked {
 .markdown-body.ai-markdown .ai-md-code-copy:hover {
   color: #e5e7eb;
   background: rgba(255, 255, 255, 0.07);
+}
+
+/* ── Inner-block scrolling ──────────────────────────────────────────────
+   Instead of capping the entire AI response at a fixed height, each
+   individual content block (code, table) gets its own scroll region.
+   The outer message flows naturally in the chat feed.
+────────────────────────────────────────────────────────────────────── */
+
+/* Code blocks: cap height and scroll vertically when content is long */
+.markdown-body.ai-markdown .ai-md-code-shell pre {
+  max-height: min(32rem, 60vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Tables already have overflow-x: auto via .ai-md-table-wrap.
+   Add a vertical cap for very tall tables too. */
+.markdown-body.ai-markdown .ai-md-table-wrap {
+  max-height: min(36rem, 68vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .markdown-body.ai-markdown pre {
@@ -858,6 +892,14 @@ select option:checked {
 /* ─── Mobile touch improvements ──────────────────────────────────────── */
 
 @media (max-width: 768px) {
+  .markdown-body.ai-markdown .ai-md-code-shell pre {
+    max-height: min(26rem, 52vh);
+  }
+
+  .markdown-body.ai-markdown .ai-md-table-wrap {
+    max-height: min(28rem, 56vh);
+  }
+
   /* Disable hover effects on touch devices */
   @media (hover: none) {
     .group:hover {

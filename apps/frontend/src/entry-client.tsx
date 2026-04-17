@@ -1,5 +1,34 @@
+/**
+ * @fileoverview apps/frontend/src/entry-client.tsx
+ *
+ * High-level purpose:
+ * Frontend module supporting application runtime behavior, user experience, or development workflow reliability.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Defines typed module contracts for predictable frontend behavior.
+ * - Improves maintainability through explicit module responsibilities.
+ * - Supports integration with routes, components, and shared utilities.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import and compose this module through frontend boundaries.
+ * 2. Wire module outputs to consumers with typed interfaces.
+ * 3. Validate behavior through corresponding frontend tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 // @refresh reload
 import { mount, StartClient } from "@solidjs/start/client";
+import {
+  reportRuntimeDebug,
+  reportRuntimeError,
+  reportRuntimeInfo,
+} from "./lib/runtime-reporter";
 let mountResult: unknown;
 
 /**
@@ -38,13 +67,13 @@ function showRuntimeBanner(prefix: string, message: string) {
 
 window.addEventListener("error", (event) => {
   const msg = event.error instanceof Error ? event.error.message : String(event.message || "Unknown error");
-  console.error("[Runtime error]", event.error || event.message);
+  reportRuntimeError("[Runtime error]", event.error || event.message);
   showRuntimeBanner("[Runtime error]", msg);
 });
 
 window.addEventListener("unhandledrejection", (event) => {
   const reason = event.reason instanceof Error ? `${event.reason.name}: ${event.reason.message}` : String(event.reason);
-  console.error("[Unhandled rejection]", event.reason);
+  reportRuntimeError("[Unhandled rejection]", event.reason);
   showRuntimeBanner("[Unhandled rejection]", reason);
 });
 
@@ -58,7 +87,7 @@ try {
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   document.documentElement.setAttribute("data-client-bootstrap", `error:${message}`);
-  console.error("[Client bootstrap failed]", error);
+  reportRuntimeError("[Client bootstrap failed]", error);
 
   // Render a visible fallback when startup crashes before app mount.
   showRuntimeBanner("[Client bootstrap failed]", message);
@@ -70,7 +99,7 @@ if (typeof window !== "undefined" && "serviceWorker" in navigator) {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("/sw.js").then(
         (registration) => {
-          console.log("[SW] Registered:", registration.scope);
+          reportRuntimeInfo("[SW] Registered:", registration.scope);
           registration.addEventListener("updatefound", () => {
             const installing = registration.installing;
             if (!installing) return;
@@ -83,9 +112,9 @@ if (typeof window !== "undefined" && "serviceWorker" in navigator) {
           navigator.serviceWorker.addEventListener("message", (event) => {
             const type = event.data?.type;
             if (type === "SW_QUEUE_EVENT") {
-              console.info("[SW queue]", event.data?.payload);
+              reportRuntimeInfo("[SW queue]", event.data?.payload);
             } else if (type === "SW_STATS") {
-              console.debug("[SW stats]", event.data?.payload);
+              reportRuntimeDebug("[SW stats]", event.data?.payload);
             }
           });
           navigator.serviceWorker.ready
@@ -95,10 +124,10 @@ if (typeof window !== "undefined" && "serviceWorker" in navigator) {
             navigator.serviceWorker.controller?.postMessage({ type: "RETRY_QUEUED_REQUESTS" });
           });
         },
-        (err) => console.error("[SW] Registration failed:", err)
+        (err) => reportRuntimeError("[SW] Registration failed:", err)
       );
     });
-  }).catch((err) => console.error("[SW] Setup failed:", err));
+  }).catch((err) => reportRuntimeError("[SW] Setup failed:", err));
 }
 
 export default mountResult;

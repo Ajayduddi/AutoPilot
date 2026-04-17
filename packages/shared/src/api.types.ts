@@ -1,3 +1,6 @@
+/**
+ * @fileoverview packages/shared/src/api.types.ts
+ */
 import type { ChatBlocksEnvelope } from "./chat-block.types";
 
 /** Status discriminator used by API envelopes. */
@@ -38,6 +41,8 @@ export type AuthStateMode = "onboarding" | "login" | "authenticated";
 export type AuthStateDto = {
   mode: AuthStateMode;
   user: SafeUserDto | null;
+  pendingMfaUser?: SafeUserDto | null;
+  mfaVerified?: boolean;
   oauth: { google: boolean };
 };
 
@@ -49,6 +54,25 @@ export type AccountInfoDto = {
   timezone?: string | null;
   hasPassword: boolean;
   authProvider: "password" | "google" | "hybrid";
+  mfa?: {
+    enabled: boolean;
+    pending: boolean;
+    method: "totp" | null;
+    enabledAt: string | null;
+  };
+};
+
+export type MfaStatusDto = {
+  enabled: boolean;
+  pending: boolean;
+  enabledAt: string | null;
+  method: "totp" | null;
+};
+
+export type TotpSetupDto = {
+  secret: string;
+  issuer: string;
+  otpauthUri: string;
 };
 
 /** Chat thread metadata used by thread lists and thread headers. */
@@ -94,6 +118,9 @@ export type ChatAttachmentDto = {
   previewData?: Record<string, unknown> | null;
   error?: string | null;
   extractionQuality?: "good" | "partial" | "failed";
+  extractionSource?: string | null;
+  extractionPath?: string | null;
+  extractionModel?: string | null;
   extractionStats?: {
     pages?: number;
     pagesWithText?: number;
@@ -268,8 +295,8 @@ export type ProviderConfigDto = {
   provider: string;
   customName?: string | null;
   model?: string | null;
-  apiKey?: string | null;
   baseUrl?: string | null;
+  hasApiKey?: boolean;
   isDefault: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -291,4 +318,47 @@ export type WebhookSecretDto = {
 export type RuntimePreferencesDto = {
   approvalMode: "default" | "auto";
   forceInteractiveQuestions: boolean;
+};
+
+/** Retrieval/embedding preference payload exposed by settings/retrieval endpoints. */
+export type RetrievalPreferencesDto = {
+  embeddingProvider: "api" | "bge_local" | "minilm_local";
+  embeddingApiProvider: string;
+  embeddingApiProviderId: string;
+  embeddingsIndexBatchSize: number;
+  embeddingsRetryMaxAttempts: number;
+  embeddingsRetryBaseDelayMs: number;
+  embeddingVectorDimensions: number;
+  embeddingModel: string;
+  embeddingMaxBatchSize: number;
+  embeddingCacheDir: string;
+  embeddingAllowRemoteModels: boolean;
+  embeddingQuantized: boolean;
+  semanticSearchTopKDefault: number;
+  semanticSearchMinScore: number;
+  ragMaxChunks: number;
+  ragChunkTokenBudget: number;
+  currentEmbeddingModelLabel: string;
+  currentEmbeddingProviderLabel: string;
+};
+
+/** Thread-scoped memory insight row for future debug/visibility surfaces. */
+export type ThreadMemoryInsightDto = {
+  id: string;
+  category: "workflow_run" | "assistant_decision" | "thread_state" | "audit_event" | "chat_summary";
+  summary: string | null;
+  contentPreview: string;
+  hasEmbedding: boolean;
+  summaryKind?: string;
+  importance?: string;
+  entityKeys: string[];
+  createdAt: string;
+};
+
+export type ThreadMemoryInsightsMetaDto = {
+  total: number;
+  limit: number;
+  category: ThreadMemoryInsightDto["category"] | "all";
+  groupBy: "none" | "category";
+  groupedCounts: Record<ThreadMemoryInsightDto["category"], number>;
 };

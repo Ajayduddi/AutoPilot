@@ -1,11 +1,43 @@
-import { pgTable, text, timestamp, boolean, jsonb, integer, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, jsonb, integer, index, uniqueIndex, customType } from 'drizzle-orm/pg-core';
+
+const vector = customType<{ data: number[]; driverData: string; config: { dimensions: number } }>({
+  dataType(config) {
+    return `vector(${config?.dimensions || 768})`;
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(',')}]`;
+  },
+  fromDriver(value: string): number[] {
+    const normalized = String(value || '').trim();
+    if (!normalized) return [];
+    const payload = normalized.startsWith('[') && normalized.endsWith(']')
+      ? normalized.slice(1, -1)
+      : normalized;
+    if (!payload) return [];
+    return payload.split(',').map((part) => Number(part.trim())).filter((n) => Number.isFinite(n));
+  },
+});
 
 /**
  * @fileoverview Database schema definitions using Drizzle ORM for PostgreSQL.
  *
- * This module defines all database tables, relationships, indexes, and constraints
- * for the chat automation platform. Tables are organized by domain: users, chat,
- * workflows, approvals, notifications, and context memory.
+ * High-level purpose:
+ * Canonical relational data model for backend persistence domains including
+ * users, chat, workflows, approvals, notifications, and context memory.
+ *
+ * Key Features (and trade-offs):
+ * - Defines table contracts, indexes, and constraints in a single source.
+ * - Encodes domain boundaries directly in schema-level structure.
+ * - Supports repository query performance through explicit index strategy.
+ * - Trade-off: centralized schema evolution requires disciplined migration
+ *   sequencing to avoid runtime drift across environments.
+ *
+ * Usage Guide:
+ * 1. Add or update table definitions in this module only.
+ * 2. Generate migrations after schema changes.
+ * 3. Keep repository queries aligned with schema/index updates.
+ * 4. Validate with DB preflight and migration checks before deploy.
+ * 5. Preserve backward compatibility for active production rollouts.
  *
  * @module db/schema
  * @see {@link https://orm.drizzle.team/docs/schema Drizzle Schema Docs}
@@ -42,6 +74,10 @@ export const users = pgTable('users', {
   timezone: text('timezone'),
   passwordHash: text('password_hash'),
   googleSub: text('google_sub').unique(),
+  mfaTotpSecretEnc: text('mfa_totp_secret_enc'),
+  mfaTotpPendingSecretEnc: text('mfa_totp_pending_secret_enc'),
+  mfaTotpPendingCreatedAt: timestamp('mfa_totp_pending_created_at'),
+  mfaTotpEnabledAt: timestamp('mfa_totp_enabled_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -542,6 +578,7 @@ export const authSessions = pgTable('auth_sessions', {
   expiresAt: timestamp('expires_at').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   lastSeenAt: timestamp('last_seen_at'),
+  mfaVerifiedAt: timestamp('mfa_verified_at'),
   revokedAt: timestamp('revoked_at'),
   userAgent: text('user_agent'),
   ip: text('ip'),
@@ -578,7 +615,7 @@ export const contextMemory = pgTable('context_memory', {
   threadId: text('thread_id'),
   userId: text('user_id'),
   category: text('category', {
-    enum: ['workflow_run', 'assistant_decision', 'thread_state', 'audit_event'],
+    enum: ['workflow_run', 'assistant_decision', 'thread_state', 'audit_event', 'chat_summary'],
   }).notNull(),
 
   // Source references (application-level integrity, no FK constraints)
@@ -598,4 +635,36 @@ export const contextMemory = pgTable('context_memory', {
   index('idx_context_memory_category').on(table.category),
   index('idx_context_memory_thread_category').on(table.threadId, table.category),
   index('idx_context_memory_workflow_run').on(table.workflowRunId),
+]);
+
+/**
+ * Embeddings table.
+ *
+ * Generic vector index for semantic retrieval across multiple source entities.
+ * Stores embedding payload and minimal metadata for scoped retrieval filters.
+ */
+export const embeddings = pgTable('embeddings', {
+  id: text('id').primaryKey(),
+  sourceType: text('source_type', {
+    enum: ['workflow', 'workflow_run', 'attachment_chunk', 'chat_summary'],
+  }).notNull(),
+  sourceId: text('source_id').notNull(),
+  parentId: text('parent_id'),
+  userId: text('user_id'),
+  threadId: text('thread_id'),
+  content: text('content').notNull(),
+  contentHash: text('content_hash').notNull(),
+  embedding: vector('embedding', { dimensions: 768 }).notNull(),
+  embeddingProvider: text('embedding_provider').notNull(),
+  embeddingModel: text('embedding_model').notNull(),
+  embeddingDimensions: integer('embedding_dimensions').notNull(),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('idx_embeddings_source_content_hash').on(table.sourceType, table.sourceId, table.contentHash),
+  index('idx_embeddings_source').on(table.sourceType, table.sourceId),
+  index('idx_embeddings_parent').on(table.parentId),
+  index('idx_embeddings_user_thread').on(table.userId, table.threadId),
+  index('idx_embeddings_created_at').on(table.createdAt),
 ]);

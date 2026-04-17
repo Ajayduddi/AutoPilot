@@ -1,9 +1,28 @@
 /**
  * @fileoverview providers/workflow/zapier.adapter.
  *
- * External provider adapters and interfaces for LLMs and workflow engines.
+ * High-level purpose:
+ * Zapier adapter that connects shared workflow operations to Zapier webhook/API
+ * surfaces for automation triggering and run tracking.
+ * Business value: supports broad SaaS integration ecosystems through Zapier
+ * while keeping backend orchestration contracts stable.
+ * System impact: provider option for teams standardized on Zapier workflows.
+ *
+ * Key Features (and trade-offs):
+ * - Authenticated endpoint interaction for workflow execution operations.
+ * - Shared result normalization with provider-specific metadata.
+ * - Error translation from Zapier responses into platform status model.
+ * - Adapter-level hooks for operation payload transformation.
+ * - Trade-off: advanced Zapier features may require custom mapping extensions.
+ *
+ * Usage Guide:
+ * 1. Configure Zapier credentials/endpoints in provider settings.
+ * 2. Resolve adapter via `WorkflowProviderFactory`.
+ * 3. Execute standardized workflow operations through adapter methods.
+ * 4. Use returned metadata for traceability and debugging.
+ * 5. Validate behavior with integration tests against target Zapier flows.
  */
-import type {
+import {
   Workflow,
   WorkflowExecutionRequest,
   WorkflowExecutionResult,

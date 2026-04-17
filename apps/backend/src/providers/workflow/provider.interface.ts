@@ -1,9 +1,30 @@
 /**
  * @fileoverview providers/workflow/provider.interface.
  *
- * External provider adapters and interfaces for LLMs and workflow engines.
+ * High-level purpose:
+ * Canonical contract layer for workflow provider adapters, execution requests,
+ * and normalized response envelopes.
+ * Business value: stabilizes integration boundaries so orchestration logic can
+ * switch providers without service-level rewrites.
+ * System impact: governs shape/semantics of all workflow create/execute/list
+ * interactions throughout backend runtime.
+ *
+ * Key Features (and trade-offs):
+ * - Strongly typed request/result contracts for workflow lifecycle operations.
+ * - Explicit auth, configuration, and capability metadata structures.
+ * - Provider-independent status and error normalization pattern.
+ * - Standardized testing hooks through shared adapter method signatures.
+ * - Trade-off: generic abstractions may not expose every provider-specific
+ *   advanced feature directly.
+ *
+ * Usage Guide:
+ * 1. Implement `IWorkflowProvider` in each provider adapter.
+ * 2. Return `WorkflowOperationResult<T>` for every adapter operation.
+ * 3. Map provider-native errors into `error` and `status` consistently.
+ * 4. Keep metadata fields additive and backward compatible.
+ * 5. Update orchestration tests when extending interface contracts.
  */
-import type {
+import {
   Workflow,
   WorkflowProvider,
   WorkflowExecutionRequest,

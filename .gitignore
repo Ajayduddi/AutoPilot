@@ -53,3 +53,6 @@ Thumbs.db
 .codex
 .autopilot/
 apps/frontend/app.config.timestamp_*.js
+apps/frontend/e2e-results/
+apps/frontend/playwright-report/
+apps/frontend/test-results/

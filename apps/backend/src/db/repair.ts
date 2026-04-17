@@ -1,14 +1,22 @@
 /**
  * @fileoverview Database integrity repair runner.
  *
- * Analyzes and optionally repairs known integrity issues:
- * - orphan `workflow_runs`
- * - orphan `approvals`
- * - orphan `notifications.run_id`
- * - duplicate non-null `users.google_sub`
+ * High-level purpose:
+ * Database schema, bootstrap, and operational safety helpers for persistence runtime.
  *
- * @remarks
- * Use analyze mode first to review planned actions before applying changes.
+ * Key Features (and trade-offs):
+ * - Defines schema/migration/seed and lifecycle utilities.
+ * - Supports preflight and integrity checks for production safety.
+ * - Provides shared DB access primitives for repositories.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Follow migration safety workflow before schema changes.
+ * 3. Keep destructive operations guarded and explicit.
+ * 4. Validate with DB preflight/typecheck as applicable.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import * as dotenv from 'dotenv';
 import postgres from 'postgres';

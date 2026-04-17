@@ -1,9 +1,34 @@
+/**
+ * @fileoverview apps/frontend/src/components/layout/Sidebar.tsx
+ *
+ * High-level purpose:
+ * Reusable frontend presentation module for rendering chat, settings, and UI primitives across routes.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates reusable UI logic behind typed component contracts.
+ * - Supports composable view patterns with minimal route coupling.
+ * - Balances readability and flexibility for evolving product surfaces.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Import the component into route or parent composition layers.
+ * 2. Pass required typed props and wire callbacks to domain actions.
+ * 3. Confirm visual and interaction behavior with component tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { A, useLocation, useNavigate } from "@solidjs/router";
-import { createSignal, createResource, Show, For, onMount, onCleanup } from "solid-js";
+import { createSignal, createResource, createEffect, Show, For, onMount, onCleanup } from "solid-js";
 import { useNotifications } from "../../context/notifications.context";
 import { approvalsApi, chatApi } from "../../lib/api";
 import { useAuth } from "../../context/auth.context";
 import { useMobileMenu } from "../../context/mobile-menu.context";
+import { Portal } from "solid-js/web";
 
 /**
  * Utility function to sidebar.
@@ -28,14 +53,55 @@ export function Sidebar() {
   const mobileMenu = useMobileMenu();
   const navigate = useNavigate();
 
+  // Mobile thread menu state
+  const [menuOpenId, setMenuOpenId] = createSignal<string | null>(null);
+  const [editingThreadId, setEditingThreadId] = createSignal<string | null>(null);
+  const [renameValue, setRenameValue] = createSignal("");
+  const [menuAnchor, setMenuAnchor] = createSignal<{ top: number; right: number } | null>(null);
+
   // Fetch threads for mobile sidebar
-  const [threads] = createResource(
+  const [threads, { refetch: refetchThreads }] = createResource(
     () => mobileMenu.isOpen(),
     async (isOpen) => {
       if (!isOpen) return [];
       try { return await chatApi.getThreads(); } catch { return []; }
     }
   );
+
+  async function commitRename(threadId: string) {
+    const title = renameValue().trim();
+    if (!title) { setEditingThreadId(null); return; }
+    try { await chatApi.renameThread(threadId, title); } catch { /* keep going */ }
+    setEditingThreadId(null);
+    refetchThreads();
+  }
+
+  async function deleteThread(threadId: string) {
+    try { await chatApi.deleteThread(threadId); } catch { /* keep going */ }
+    setMenuOpenId(null);
+    refetchThreads();
+  }
+
+  function openThreadMenu(e: MouseEvent, threadId: string) {
+    e.stopPropagation();
+    if (menuOpenId() === threadId) { setMenuOpenId(null); setMenuAnchor(null); return; }
+    const btn = e.currentTarget as HTMLElement;
+    const rect = btn.getBoundingClientRect();
+    setMenuAnchor({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    // Set in next tick so the document click handler (which fires on same event) doesn't close it
+    setTimeout(() => setMenuOpenId(threadId), 0);
+  }
+
+  function closeMenu() { setMenuOpenId(null); setMenuAnchor(null); }
+
+  // Attach outside-click handler only while a menu is open
+  createEffect(() => {
+    if (menuOpenId() !== null) {
+      const handler = () => closeMenu();
+      document.addEventListener("click", handler);
+      onCleanup(() => document.removeEventListener("click", handler));
+    }
+  });
   const isActuallyExpanded = () => expanded() || mobileMenu.isOpen();
   const labelClass = () => `text-[14px] font-medium whitespace-nowrap transition-[opacity,max-width] duration-300 overflow-hidden ${isActuallyExpanded() ? "opacity-100 max-w-[140px]" : "opacity-0 max-w-0"}`;
   const unreadLabel = () => (unreadCount() > 9 ? "9+" : String(unreadCount()));
@@ -92,15 +158,20 @@ export function Sidebar() {
         class={`fixed md:relative inset-y-0 left-0 z-50 border-r border-[#1a1a1a] bg-[#0a0a0a] flex flex-col shrink-0 overflow-x-hidden overflow-y-auto scrollbar-custom transition-[width,transform] duration-400 ease-[cubic-bezier(0.4,0,0.2,1)] ${
           mobileMenu.isOpen() ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         }`}
-        style={{ width: isActuallyExpanded() ? "220px" : mobileMenu.isOpen() ? "220px" : "60px" }}
+        style={{ width: mobileMenu.isOpen() ? "100vw" : isActuallyExpanded() ? "220px" : "60px" }}
       >
         {/* Brand */}
-        <div class={`py-5 flex items-center ${isActuallyExpanded() ? "px-5 gap-3" : "justify-center"}`} style={{ transition: "padding 400ms cubic-bezier(0.4, 0, 0.2, 1)" }}>
+        <button
+          onClick={() => { mobileMenu.close(); navigate("/"); }}
+          class={`py-5 flex items-center w-full text-left cursor-pointer ${mobileMenu.isOpen() ? "justify-center gap-3" : isActuallyExpanded() ? "px-5 gap-3" : "justify-center"}`}
+          style={{ transition: "padding 400ms cubic-bezier(0.4, 0, 0.2, 1)" }}
+          title="New chat"
+        >
         <div class="w-9 h-9 rounded-xl bg-indigo-600/95 flex items-center justify-center shadow-[0_0_22px_rgba(99,102,241,0.38)] border border-indigo-400/20 shrink-0">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
         </div>
-        <span class={`text-[15px] font-semibold text-neutral-50 tracking-tight ${labelClass()}`}>AutoPilot</span>
-      </div>
+        <span class={`text-[15px] font-semibold text-neutral-50 tracking-tight ${mobileMenu.isOpen() ? "opacity-100 max-w-none" : labelClass()}`}>AutoPilot</span>
+        </button>
 
       {/* Nav */}
       <nav class={`shrink-0 flex flex-col gap-1 pt-2 ${isActuallyExpanded() ? "px-2.5" : "items-center"}`} style={{ transition: "padding 400ms cubic-bezier(0.4, 0, 0.2, 1)" }}>
@@ -165,15 +236,87 @@ export function Sidebar() {
             </Show>
             <For each={threads() || []}>
               {(thread: any) => (
-                <button
-                  onClick={() => { mobileMenu.close(); navigate(`/threads/${thread.id}`); }}
-                  class="w-full text-left px-3 py-2 rounded-xl text-[13px] text-neutral-400 hover:text-neutral-100 hover:bg-white/[0.05] transition-all duration-150 truncate"
-                >
-                  {thread.title || "Untitled"}
-                </button>
+                <div class="group relative w-full flex items-center rounded-xl hover:bg-white/[0.04] transition-all duration-200">
+                  {/* Inline rename editor or thread title */}
+                  <Show
+                    when={editingThreadId() === thread.id}
+                    fallback={
+                      <button
+                        onClick={() => { mobileMenu.close(); navigate(`/threads/${thread.id}`); }}
+                        class="flex-1 text-left px-3 py-2.5 text-[13px] text-neutral-400 hover:text-neutral-100 transition-all duration-150 truncate min-w-0"
+                      >
+                        {thread.title || "Untitled"}
+                      </button>
+                    }
+                  >
+                    <input
+                      class="flex-1 mx-2 my-1 px-2.5 py-1.5 text-[13px] bg-neutral-900 border border-neutral-700/50 rounded-lg text-neutral-100 focus:outline-none focus:border-indigo-500/50 transition-colors"
+                      maxLength={50}
+                      value={renameValue()}
+                      onInput={(e) => setRenameValue(e.currentTarget.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === "Enter") { e.preventDefault(); await commitRename(thread.id); }
+                        if (e.key === "Escape") setEditingThreadId(null);
+                      }}
+                      onBlur={() => commitRename(thread.id)}
+                      ref={(el) => setTimeout(() => el?.focus(), 30)}
+                    />
+                  </Show>
+
+                  {/* Three-dot menu button — always visible on mobile */}
+                  <Show when={editingThreadId() !== thread.id}>
+                    <button
+                      onClick={(e) => openThreadMenu(e, thread.id)}
+                      class="shrink-0 p-2 mr-1 rounded-lg text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition-all duration-200"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+                      </svg>
+                    </button>
+                  </Show>
+                </div>
               )}
             </For>
           </div>
+
+          {/* Portal dropdown menu rendered outside sidebar to avoid clipping */}
+          <Show when={menuOpenId() !== null && menuAnchor() !== null}>
+            <Portal>
+              <div
+                class="fixed z-[200] w-40 bg-[#1a1a1a] border border-neutral-800/60 rounded-xl shadow-2xl shadow-black/60 py-1 text-xs animate-fade-in"
+                style={{ top: `${menuAnchor()!.top}px`, right: `${menuAnchor()!.right}px` }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <button
+                  class="w-full text-left px-3 py-2.5 text-neutral-400 hover:bg-white/5 hover:text-white transition-all duration-150 flex items-center gap-2"
+                  onClick={() => { mobileMenu.close(); navigate(`/threads/${menuOpenId()}`); setMenuOpenId(null); }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l2.5 2.5" /><path d="M21 12a9 9 0 1 1-9-9" /></svg>
+                  Memory
+                </button>
+                <button
+                  class="w-full text-left px-3 py-2.5 text-neutral-400 hover:bg-white/5 hover:text-white transition-all duration-150 flex items-center gap-2"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const thread = (threads() || []).find((t: any) => t.id === menuOpenId());
+                    if (thread) { setRenameValue(thread.title || ""); setEditingThreadId(thread.id); }
+                    setMenuOpenId(null); setMenuAnchor(null);
+                  }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                  Rename
+                </button>
+                <button
+                  class="w-full text-left px-3 py-2.5 text-red-400/80 hover:bg-red-500/10 hover:text-red-400 transition-all duration-150 flex items-center gap-2"
+                  onClick={(e) => { e.stopPropagation(); const id = menuOpenId()!; setMenuOpenId(null); setMenuAnchor(null); deleteThread(id); }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                  Delete
+                </button>
+              </div>
+            </Portal>
+          </Show>
         </div>
       </Show>
 

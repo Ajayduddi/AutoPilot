@@ -1,6 +1,8 @@
 # API Reference (Current)
 
-Base URL (local): `http://localhost:3000`
+Production base URL: `https://<your-backend-origin>`
+
+Local development base URL: `http://localhost:3000`
 
 ## Response Conventions
 
@@ -36,6 +38,7 @@ All requests include/propagate `x-trace-id` via trace middleware.
 - `GET /health` — liveness
 - `GET /health/ready` — readiness checks (runtime config + DB + webhook security + secrets)
 - `GET /health/metrics` — Prometheus text metrics
+  In production this stays private by default. Use `Authorization: Bearer <METRICS_AUTH_TOKEN>` or `x-metrics-token` when `METRICS_AUTH_TOKEN` is configured, or explicitly set `METRICS_ALLOW_PUBLIC=true`.
 
 ---
 
@@ -119,6 +122,34 @@ Streaming event types emitted by `/messages/stream`:
 Optional query:
 
 - `GET /:runId?includeRaw=true`
+
+---
+
+## Search (`/api/search`)
+
+- `GET /workflows` / `POST /workflows`
+- `GET /documents` / `POST /documents`
+- `GET /runs` / `POST /runs`
+
+Notes:
+
+- These endpoints are auth-protected and use hybrid retrieval:
+  - relational filters first (ownership/thread/workflow constraints)
+  - semantic vector similarity ranking second
+- Responses include retrieval mode (`semantic`, `lexical_fallback`, or `unavailable`) where applicable.
+
+---
+
+## Recommendations (`/api/recommendations`)
+
+- `GET /workflows/:id`
+- `GET /runs/:id`
+- `GET /documents/:id`
+
+Notes:
+
+- Recommendation endpoints are auth-protected.
+- They return similarity-scored related entities and degrade to `mode: "unavailable"` if retrieval is not available.
 
 ---
 
@@ -208,6 +239,13 @@ Settings routes are auth-protected and restricted to primary settings user.
 - `GET /providers/model-capabilities`
 - `GET /runtime-preferences`
 - `PATCH /runtime-preferences`
+- `GET /retrieval-preferences`
+- `PATCH /retrieval-preferences`
 - `GET /webhook-secrets`
 - `POST /webhook-secrets`
 - `DELETE /webhook-secrets/:id`
+
+Notes:
+
+- `POST /fetch-models` requires `providerId` for remote provider discovery and resolves API keys from saved provider connections only.
+- `GET /providers/model-capabilities` supports `embeddingOnly=true` for retrieval-model selection flows.

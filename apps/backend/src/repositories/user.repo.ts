@@ -1,10 +1,24 @@
 /**
  * @fileoverview repositories/user.repo.
  *
- * User persistence helpers for profile, auth-linking, and legacy-account migration.
+ * High-level purpose:
+ * Data access repository layer for persistence operations and query composition.
+ *
+ * Key Features (and trade-offs):
+ * - Typed CRUD/query helpers over Drizzle and database schema.
+ * - Centralized data filtering, sorting, and pagination primitives.
+ * - Keeps SQL/ORM concerns isolated from route and service layers.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Use repositories from services only, not directly from routes.
+ * 3. Keep repository methods deterministic and side-effect scoped.
+ * 4. Run database-related tests when query behavior changes.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import { and, asc, eq, ne, or, sql } from 'drizzle-orm';
-import { randomUUID } from 'crypto';
 import { db } from '../db';
 import {
   users,
@@ -25,13 +39,6 @@ const LEGACY_USER_ID = 'usr_admin';
  */
 export const UserRepo = {
   LEGACY_USER_ID,
-
-    async initSchemaIfNeeded() {
-    await db.execute(sql.raw(`
-      ALTER TABLE "users"
-      ADD COLUMN IF NOT EXISTS "timezone" text;
-    `));
-  },
 
     async getById(id: string) {
     return db.query.users.findFirst({ where: eq(users.id, id) });
@@ -68,7 +75,7 @@ export const UserRepo = {
 
   async createUser(input: { email: string; name?: string | null; timezone?: string | null; passwordHash?: string | null; googleSub?: string | null }) {
     const [created] = await db.insert(users).values({
-      id: `usr_${randomUUID()}`,
+      id: `usr_${crypto.randomUUID()}`,
       email: input.email.toLowerCase(),
       name: input.name || null,
       timezone: input.timezone || null,
@@ -159,6 +166,54 @@ export const UserRepo = {
     async updatePasswordHash(userId: string, passwordHash: string) {
     const [updated] = await db.update(users)
       .set({ passwordHash })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated;
+  },
+
+  async beginTotpSetup(userId: string, pendingSecretEnc: string) {
+    const [updated] = await db.update(users)
+      .set({
+        mfaTotpPendingSecretEnc: pendingSecretEnc,
+        mfaTotpPendingCreatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated;
+  },
+
+  async enableTotp(userId: string, activeSecretEnc: string) {
+    const [updated] = await db.update(users)
+      .set({
+        mfaTotpSecretEnc: activeSecretEnc,
+        mfaTotpPendingSecretEnc: null,
+        mfaTotpPendingCreatedAt: null,
+        mfaTotpEnabledAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated;
+  },
+
+  async clearPendingTotp(userId: string) {
+    const [updated] = await db.update(users)
+      .set({
+        mfaTotpPendingSecretEnc: null,
+        mfaTotpPendingCreatedAt: null,
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated;
+  },
+
+  async disableTotp(userId: string) {
+    const [updated] = await db.update(users)
+      .set({
+        mfaTotpSecretEnc: null,
+        mfaTotpPendingSecretEnc: null,
+        mfaTotpPendingCreatedAt: null,
+        mfaTotpEnabledAt: null,
+      })
       .where(eq(users.id, userId))
       .returning();
     return updated;

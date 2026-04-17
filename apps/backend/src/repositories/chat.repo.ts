@@ -1,13 +1,27 @@
 /**
  * @fileoverview repositories/chat.repo.
  *
- * Database access utilities and persistence workflows for backend entities.
+ * High-level purpose:
+ * Data access repository layer for persistence operations and query composition.
+ *
+ * Key Features (and trade-offs):
+ * - Typed CRUD/query helpers over Drizzle and database schema.
+ * - Centralized data filtering, sorting, and pagination primitives.
+ * - Keeps SQL/ORM concerns isolated from route and service layers.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Use repositories from services only, not directly from routes.
+ * 3. Keep repository methods deterministic and side-effect scoped.
+ * 4. Run database-related tests when query behavior changes.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import { and, eq, inArray, isNull, lt, asc } from 'drizzle-orm';
 import { db } from '../db';
 import { chatThreads, chatMessages, workflowRuns, chatAttachments, chatAttachmentChunks } from '../db/schema';
 import { generateThreadId } from '../util/thread-id';
-import { randomUUID } from 'crypto';
 
 /**
  * ChatRepo exported constant.
@@ -72,7 +86,7 @@ export const ChatRepo = {
   },
 
     async addMessage(threadId: string, role: 'user' | 'assistant' | 'system', content?: string, blocks?: any) {
-        const id = `msg_${randomUUID()}`;
+        const id = `msg_${crypto.randomUUID()}`;
     const [msg] = await db.insert(chatMessages).values({
       id,
       threadId,
@@ -129,7 +143,7 @@ export const ChatRepo = {
     previewData?: Record<string, unknown> | null;
     error?: string | null;
   }) {
-        const id = `att_${randomUUID()}`;
+        const id = `att_${crypto.randomUUID()}`;
     const [row] = await db.insert(chatAttachments).values({
       id,
       userId: input.userId,
@@ -215,10 +229,10 @@ export const ChatRepo = {
     }>;
   }) {
     await db.delete(chatAttachmentChunks).where(eq(chatAttachmentChunks.attachmentId, input.attachmentId));
-    if (!input.chunks.length) return;
-    await db.insert(chatAttachmentChunks).values(
+    if (!input.chunks.length) return [];
+    const rows = await db.insert(chatAttachmentChunks).values(
       input.chunks.map((chunk, idx) => ({
-        id: `atchk_${randomUUID()}`,
+        id: `atchk_${crypto.randomUUID()}`,
         attachmentId: input.attachmentId,
         userId: input.userId,
         chunkIndex: idx,
@@ -226,7 +240,8 @@ export const ChatRepo = {
         tokenCount: chunk.tokenCount ?? null,
         metadata: chunk.metadata ?? null,
       })),
-    );
+    ).returning();
+    return rows;
   },
 
     async getAttachmentChunksByAttachmentIds(attachmentIds: string[], opts?: { limitPerAttachment?: number }) {

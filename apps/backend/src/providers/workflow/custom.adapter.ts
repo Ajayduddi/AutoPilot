@@ -1,9 +1,29 @@
 /**
  * @fileoverview providers/workflow/custom.adapter.
  *
- * External provider adapters and interfaces for LLMs and workflow engines.
+ * High-level purpose:
+ * Generic HTTP/webhook workflow adapter for integrating bespoke automation
+ * systems that do not fit predefined provider adapters.
+ * Business value: unlocks extensibility for enterprise-specific workflow
+ * engines while preserving backend contract uniformity.
+ * System impact: compatibility bridge for custom or legacy automation stacks.
+ *
+ * Key Features (and trade-offs):
+ * - Config-driven endpoint and auth handling.
+ * - Flexible payload forwarding for create/execute/list operations.
+ * - Normalized response envelopes mapped to shared workflow contracts.
+ * - Pluggable request shaping for provider-specific expectations.
+ * - Trade-off: weaker compile-time guarantees due to generic integration
+ *   semantics across diverse external systems.
+ *
+ * Usage Guide:
+ * 1. Register custom provider config with endpoint + auth metadata.
+ * 2. Resolve through `WorkflowProviderFactory`.
+ * 3. Send contract-compliant operation payloads.
+ * 4. Validate remote response mapping and error propagation.
+ * 5. Add adapter-specific tests for request/response transformation.
  */
-import type {
+import {
   Workflow,
   WorkflowExecutionRequest,
   WorkflowExecutionResult,

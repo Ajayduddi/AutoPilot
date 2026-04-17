@@ -1,8 +1,31 @@
+/**
+ * @fileoverview apps/frontend/src/routes/workflow-detail.tsx
+ *
+ * High-level purpose:
+ * Frontend route module that composes page-level UI, data loading, and user flows for navigation states.
+ * Business value: helps frontend teams evolve user-facing behavior with
+ * predictable module responsibilities and lower integration risk.
+ * System impact: this module contributes to frontend runtime correctness,
+ * maintainability, and release confidence.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates route-scoped layout and state transitions.
+ * - Coordinates API interactions with route-specific rendering behavior.
+ * - Supports responsive UX patterns for authenticated and guest flows.
+ * - Trade-off: stronger modular boundaries can require extra composition
+ *   plumbing when implementing cross-feature changes.
+ *
+ * Usage Guide:
+ * 1. Create or update route component exports for target navigation path.
+ * 2. Connect route logic to frontend API helpers and shared context providers.
+ * 3. Validate route behavior on desktop and mobile with route/e2e tests.
+ * 4. Validate behavior with existing frontend lint/type/test workflows.
+ * 5. Keep this overview updated when module responsibilities change.
+ */
 import { Title } from "@solidjs/meta";
 import { useParams, useNavigate } from "@solidjs/router";
-import { createResource, createSignal, For, Show, onMount, onCleanup } from "solid-js";
-import { workflowsApi, notificationsApi } from "../lib/api";
-import { useMobileMenu } from "../context/mobile-menu.context";
+import { createMemo, createResource, createSignal, For, Show, onMount, onCleanup } from "solid-js";
+import { workflowsApi, notificationsApi, recommendationsApi } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { CustomSelect } from "../components/ui/CustomSelect";
 import {
@@ -39,11 +62,14 @@ const statusDots: Record<string, string> = {
 export default function WorkflowDetail() {
   const params = useParams();
   const navigate = useNavigate();
-  const mobileMenu = useMobileMenu();
   const [workflow, { refetch: refetchWorkflow }] = createResource(() => params.id, (id) => workflowsApi.getById(id));
   const [runs, { refetch: refetchRuns }] = createResource(
     () => params.id,
     (id) => workflowsApi.getRuns(id, { limit: 20 }),
+  );
+  const [similarWorkflows] = createResource(
+    () => params.id,
+    (id) => recommendationsApi.getSimilarWorkflows(id, { limit: 6 }),
   );
 
   const [triggering, setTriggering] = createSignal(false);
@@ -81,6 +107,11 @@ export default function WorkflowDetail() {
     tags: "",
   });
   let sse: EventSource | undefined;
+  const latestRunId = createMemo(() => (runs() || [])[0]?.id as string | undefined);
+  const [relatedRuns] = createResource(
+    () => latestRunId(),
+    (runId) => runId ? recommendationsApi.getRelatedRuns(runId, { limit: 6 }) : [],
+  );
 
   onMount(() => {
     sse = notificationsApi.openStream();
@@ -796,6 +827,68 @@ export default function WorkflowDetail() {
                 ))}
               </div>
             </Show>
+
+            {/* Recommendations */}
+            <div class={showEditForm() ? "hidden md:block" : ""}>
+              <div class="workflow-surface rounded-xl p-4">
+                <div class="flex items-center justify-between mb-3">
+                  <h2 class="text-sm font-semibold text-neutral-200">Recommendations</h2>
+                  <span class="text-[10px] text-neutral-500">Semantic similarity</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p class="text-[10px] uppercase tracking-[0.14em] text-neutral-500 mb-2">Similar Workflows</p>
+                    <Show when={similarWorkflows.loading}>
+                      <p class="text-xs text-neutral-400">Loading recommendations…</p>
+                    </Show>
+                    <Show when={!similarWorkflows.loading && (similarWorkflows() || []).length === 0}>
+                      <p class="text-xs text-neutral-500">No similar workflows found yet.</p>
+                    </Show>
+                    <Show when={!similarWorkflows.loading && (similarWorkflows() || []).length > 0}>
+                      <div class="space-y-2">
+                        <For each={similarWorkflows() || []}>
+                          {(item: any) => (
+                            <button
+                              onClick={() => navigate(`/workflows/${item.workflowId}`)}
+                              class="w-full text-left rounded-lg border border-neutral-700/60 bg-neutral-900/55 hover:bg-neutral-800/65 transition-colors px-3 py-2"
+                            >
+                              <p class="text-xs text-slate-100 font-medium truncate">{item.name}</p>
+                              <p class="text-[10px] text-neutral-400 mt-0.5">{item.provider} • score {Number(item.similarity || 0).toFixed(3)}</p>
+                            </button>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                  </div>
+
+                  <div>
+                    <p class="text-[10px] uppercase tracking-[0.14em] text-neutral-500 mb-2">Related Runs</p>
+                    <Show when={relatedRuns.loading}>
+                      <p class="text-xs text-neutral-400">Loading related runs…</p>
+                    </Show>
+                    <Show when={!relatedRuns.loading && (relatedRuns() || []).length === 0}>
+                      <p class="text-xs text-neutral-500">No related runs available.</p>
+                    </Show>
+                    <Show when={!relatedRuns.loading && (relatedRuns() || []).length > 0}>
+                      <div class="space-y-2">
+                        <For each={relatedRuns() || []}>
+                          {(run: any) => (
+                            <button
+                              onClick={() => loadRunDetail(run.runId)}
+                              class="w-full text-left rounded-lg border border-neutral-700/60 bg-neutral-900/55 hover:bg-neutral-800/65 transition-colors px-3 py-2"
+                            >
+                              <p class="text-xs text-slate-100 font-medium truncate">{run.workflowKey}</p>
+                              <p class="text-[10px] text-neutral-400 mt-0.5 capitalize">{run.status} • score {Number(run.similarity || 0).toFixed(3)}</p>
+                            </button>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* Run History */}
             <div class={showEditForm() ? "hidden md:block" : ""}>

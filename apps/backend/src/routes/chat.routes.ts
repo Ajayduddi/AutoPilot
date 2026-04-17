@@ -1,24 +1,44 @@
 /**
  * @fileoverview routes/chat.routes.
  *
- * HTTP endpoints, request validation, and response composition for API resources.
+ * High-level purpose:
+ * HTTP route surface that validates requests and delegates business logic to services.
+ *
+ * Key Features (and trade-offs):
+ * - Schema-driven request validation and response normalization.
+ * - Auth/rate-limit aware route composition for API boundaries.
+ * - Thin handlers that preserve routes -> services -> repositories layering.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Add new endpoints by pairing route handlers with schemas.
+ * 3. Delegate business decisions to service layer components.
+ * 4. Verify contract changes with API and route tests.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import { Router } from 'express';
 import { validate } from '../middleware/validate.middleware';
 import { createThreadSchema, addMessageSchema, renameThreadSchema, answerQuestionSchema } from '../schemas/chat.schema';
 import { ChatService } from '../services/chat.service';
-import { OrchestratorService } from '../services/orchestrator.service';
-import { AgentService } from '../services/agent.service';
+import { OrchestratorService } from '../services/orchestrator/orchestrator.service';
+import { AgentService } from '../services/agent/agent.service';
 import { ChatRepo } from '../repositories/chat.repo';
-import { AttachmentProcessingService } from '../services/attachment-processing.service';
-import { AttachmentStorageService } from '../services/attachment-storage.service';
+import { AttachmentProcessingService } from '../services/attachments/attachment-processing.service';
+import { AttachmentStorageService } from '../services/attachments/attachment-storage.service';
+import { EmbeddingIndexService } from '../services/retrieval/embedding-index.service';
 import { rateLimit } from '../middleware/rate-limit.middleware';
-import { ReActTelemetryAnalyticsService } from '../services/react-telemetry-analytics.service';
-import { ContextService } from '../services/context.service';
+import { ReActTelemetryAnalyticsService } from '../services/telemetry/react-telemetry-analytics.service';
+import {
+  normalizeFrontendTelemetryEvent,
+  recordFrontendTelemetry,
+} from '../services/telemetry/frontend-telemetry.service';
+import { ContextService } from '../services/context/context.service';
+import { ContextMemoryExtractionService } from '../services/context/context-memory-extraction.service';
 import { getRuntimeConfig } from '../config/runtime.config';
 import { isChatBlocksEnvelope } from '@autopilot/shared';
 import { logger } from '../util/logger';
-import { incrementCounter } from '../util/metrics';
 
 const router = Router();
 
@@ -103,6 +123,9 @@ function decorateAttachmentForClient(att: any) {
     ...att,
     extractionQuality: meta.extractionQuality,
     extractionStats: meta.extractionStats,
+    extractionSource: meta.extractionSource || null,
+    extractionPath: meta.extractionProviderPath || meta.processingPath || null,
+    extractionModel: meta.extractionModel || null,
   };
 }
 
@@ -142,20 +165,12 @@ async function requestToFormData(req: any): Promise<any> {
 }
 
 router.post('/client-telemetry', async (req, res) => {
-    const userId = req.auth?.user?.id || 'unknown';
-    const level = String(req.body?.level || 'info').toLowerCase();
-    const category = String(req.body?.category || 'client_event');
-    const message = String(req.body?.message || 'client_event');
-    const metadata = (req.body?.metadata && typeof req.body.metadata === 'object') ? req.body.metadata : {};
-
-  incrementCounter('autopilot_frontend_telemetry_events_total', { category, level });
-  if (level === 'error') {
-    logger.error({ scope: 'frontend.telemetry', message, userId, traceId: req.traceId, category, ...metadata });
-  } else if (level === 'warn') {
-    logger.warn({ scope: 'frontend.telemetry', message, userId, traceId: req.traceId, category, ...metadata });
-  } else {
-    logger.info({ scope: 'frontend.telemetry', message, userId, traceId: req.traceId, category, ...metadata });
-  }
+  const event = normalizeFrontendTelemetryEvent(req.body || {});
+  recordFrontendTelemetry({
+    userId: req.auth?.user?.id || 'unknown',
+    traceId: req.traceId,
+    event,
+  });
 
   return res.json({ status: 'ok' });
 });
@@ -190,12 +205,9 @@ router.get('/threads/:threadId/messages', async (req, res, next) => {
       (acc[key] ||= []).push(att);
       return acc;
     }, {});
-        const runtime = getRuntimeConfig();
         const enriched = msgs.map((msg) => {
-            const normalizedBlocks = runtime.features.typedContracts
-        ? normalizeBlocksForClient(msg.blocks as unknown)
-        : (msg.blocks as unknown);
-      if (runtime.features.typedContracts && !isChatBlocksEnvelope(normalizedBlocks)) {
+      const normalizedBlocks = normalizeBlocksForClient(msg.blocks as unknown);
+      if (!isChatBlocksEnvelope(normalizedBlocks)) {
         logger.warn({
           scope: "chat.routes",
           message: "Message blocks failed typed contract normalization",
@@ -248,6 +260,42 @@ router.get('/threads/:threadId/audit-log', async (req, res, next) => {
         createdAt: item.createdAt,
       })),
       meta: { limit },
+    });
+  } catch (err) { next(err); }
+});
+
+router.get('/threads/:threadId/memory-insights', async (req, res, next) => {
+  try {
+        const userId = req.auth!.user.id;
+        const thread = await ChatRepo.getThreadById(req.params.threadId);
+    if (!thread || thread.userId !== userId) {
+      return res.status(404).json({ error: 'Thread not found' });
+    }
+        const rawLimit = Number(req.query.limit || 40);
+        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, rawLimit)) : 40;
+        const rawCategory = typeof req.query.category === 'string' ? req.query.category.trim() : '';
+        const allowedCategories = new Set(['workflow_run', 'assistant_decision', 'thread_state', 'audit_event', 'chat_summary']);
+        const category = rawCategory && allowedCategories.has(rawCategory) ? rawCategory as any : 'all';
+        const groupBy = req.query.groupBy === 'category' ? 'category' : 'none';
+        const summary = await ContextService.listThreadMemoryInsightsSummary(req.params.threadId, {
+          limit,
+          category,
+          groupBy,
+        });
+        const insights = summary.items;
+    res.json({
+      status: 'ok',
+      data: insights.map((item) => ({
+        ...item,
+        createdAt: item.createdAt.toISOString(),
+      })),
+      meta: {
+        total: summary.total,
+        limit,
+        category,
+        groupBy,
+        groupedCounts: summary.groupedCounts,
+      },
     });
   } catch (err) { next(err); }
 });
@@ -325,10 +373,30 @@ router.post('/attachments', rateLimit({ keyPrefix: 'chat-attachments', limit: 30
           error: processed.error || null,
         });
         if (processed.chunks?.length) {
-          await ChatRepo.replaceAttachmentChunks({
+          const chunkRows = await ChatRepo.replaceAttachmentChunks({
             attachmentId: row.id,
             userId,
             chunks: processed.chunks,
+          });
+          EmbeddingIndexService.reindexAttachmentChunks({
+            attachmentId: row.id,
+            userId,
+            threadId: threadId || null,
+            chunks: chunkRows.map((chunk) => ({
+              id: chunk.id,
+              chunkIndex: chunk.chunkIndex,
+              content: chunk.content,
+              tokenCount: chunk.tokenCount ?? null,
+              metadata: (chunk.metadata as Record<string, unknown> | null) || null,
+            })),
+          }).catch((err) => {
+            logger.warn({
+              scope: 'chat.routes',
+              message: 'Attachment chunk embedding indexing failed',
+              attachmentId: row.id,
+              userId,
+              err,
+            });
           });
         }
         created.push(decorateAttachmentForClient(row));
@@ -443,6 +511,24 @@ router.post('/threads/:threadId/messages', validate(addMessageSchema), async (re
         headerTimezone: headerValue(req.headers['x-user-timezone']),
       },
     });
+    ContextMemoryExtractionService.extractAndIndexFromTurn({
+      threadId,
+      userId,
+      userMessage: content,
+      assistantReply: String((assistantReply as any)?.content || ''),
+      sourceMessageIds: [userMessage.id, String((assistantReply as any)?.id || '')].filter(Boolean),
+      providerId,
+      model,
+    }).catch((err) => {
+      logger.warn({
+        scope: 'chat.routes',
+        message: 'Chat memory extraction failed',
+        threadId,
+        traceId: req.traceId,
+        userId,
+        err,
+      });
+    });
     res.status(201).json({ status: 'ok', data: { userMessage, assistantReply } });
   } catch (err) { next(err); }
 });
@@ -543,6 +629,25 @@ router.post('/threads/:threadId/messages/stream', validate(addMessageSchema), as
         temporalInput,
       );
     }
+
+    ContextMemoryExtractionService.extractAndIndexFromTurn({
+      threadId,
+      userId,
+      userMessage: content,
+      assistantReply: String((assistantMessage as any)?.content || ''),
+      sourceMessageIds: [userMessage.id, String((assistantMessage as any)?.id || '')].filter(Boolean),
+      providerId,
+      model,
+    }).catch((err) => {
+      logger.warn({
+        scope: 'chat.routes',
+        message: 'Chat memory extraction failed',
+        threadId,
+        traceId: req.traceId,
+        userId,
+        err,
+      });
+    });
 
     // 4. Signal completion with persisted message metadata
     send('complete', { messageId: assistantMessage.id, createdAt: assistantMessage.createdAt });

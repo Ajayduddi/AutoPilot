@@ -1,10 +1,24 @@
 /**
  * @fileoverview repositories/push-subscription.repo.
  *
- * Persistence helpers for browser push subscription registration and lifecycle.
+ * High-level purpose:
+ * Data access repository layer for persistence operations and query composition.
+ *
+ * Key Features (and trade-offs):
+ * - Typed CRUD/query helpers over Drizzle and database schema.
+ * - Centralized data filtering, sorting, and pagination primitives.
+ * - Keeps SQL/ORM concerns isolated from route and service layers.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Use repositories from services only, not directly from routes.
+ * 3. Keep repository methods deterministic and side-effect scoped.
+ * 4. Run database-related tests when query behavior changes.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import { and, eq, isNull } from 'drizzle-orm';
-import { randomUUID } from 'crypto';
 import { db } from '../db';
 import { pushSubscriptions } from '../db/schema';
 
@@ -45,7 +59,7 @@ export const PushSubscriptionRepo = {
     }
 
     const [created] = await db.insert(pushSubscriptions).values({
-      id: `psub_${randomUUID()}`,
+      id: `psub_${crypto.randomUUID()}`,
       userId,
       endpoint: sub.endpoint,
       p256dh: sub.keys.p256dh,
@@ -75,4 +89,3 @@ export const PushSubscriptionRepo = {
       .where(eq(pushSubscriptions.endpoint, endpoint));
   },
 };
-

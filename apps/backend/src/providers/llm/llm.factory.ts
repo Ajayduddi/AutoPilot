@@ -1,18 +1,41 @@
 /**
  * @fileoverview providers/llm/llm.factory.
  *
- * External provider adapters and interfaces for LLMs and workflow engines.
+ * High-level purpose:
+ * Centralized provider resolver that maps persisted provider configuration to
+ * concrete LLM adapter instances at runtime.
+ * Business value: gives operations teams model/provider agility (OpenAI,
+ * Gemini, Ollama, Groq, Mistral) through settings instead of code changes.
+ * System impact: acts as the single composition point for all backend LLM
+ * calls and fallback behavior when provider config is missing.
+ *
+ * Key Features (and trade-offs):
+ * - Default-provider discovery and per-request provider override support.
+ * - Model/base-url normalization across heterogeneous provider conventions.
+ * - Encrypted API key decryption via provider-key crypto utilities.
+ * - Safe fallback to Ollama when no provider is configured.
+ * - Trade-off: centralized branching increases factory complexity as provider
+ *   matrix grows.
+ *
+ * Usage Guide:
+ * 1. Persist provider config (id/provider/model/baseUrl/apiKey) in settings.
+ * 2. Call `LLMFactory.getProvider(providerId, overriddenModel?)`.
+ * 3. Pass returned adapter into higher-level services (`LLMService`).
+ * 4. For new providers, add adapter class and extend switch in
+ *    `createProviderFromConfig`.
+ * 5. Validate with provider-fallback and route integration tests.
  */
 import { db } from '../../db';
 import { providerConfigs } from '../../db/schema';
 import { eq } from 'drizzle-orm';
-import crypto from 'crypto';
 import { ILLMProvider } from './provider.interface';
 import { OllamaProvider } from './ollama.provider';
 import { GeminiProvider } from './gemini.provider';
 import { OpenAIProvider } from './openai.provider';
 import { getRuntimeConfig } from '../../config/runtime.config';
 import { logger } from '../../util/logger';
+import { decryptProviderApiKey } from '../../util/provider-key-crypto';
+import { ProviderConfigRepo } from '../../repositories/provider-config.repo';
 
 /**
  * LLMFactory class.
@@ -24,38 +47,7 @@ import { logger } from '../../util/logger';
  * higher-level route/service flows to keep responsibilities separated.
  */
 export class LLMFactory {
-  private static readonly PROVIDER_KEY_ENCRYPTION_KEY = process.env.PROVIDER_API_KEY_ENCRYPTION_KEY || '';
-  private static readonly PROVIDER_KEY_PREFIX = 'enc:v1:';
-
-    private static deriveProviderKey(): Buffer | null {
-    if (!this.PROVIDER_KEY_ENCRYPTION_KEY.trim()) return null;
-    return crypto.createHash('sha256').update(this.PROVIDER_KEY_ENCRYPTION_KEY).digest();
-  }
-
-    static decryptProviderApiKey(stored?: string | null): string | null {
-    if (!stored) return null;
-    if (!stored.startsWith(this.PROVIDER_KEY_PREFIX)) return stored;
-        const key = this.deriveProviderKey();
-    if (!key) return null;
-        const raw = stored.slice(this.PROVIDER_KEY_PREFIX.length);
-    const [ivB64, dataB64, tagB64] = raw.split(':');
-    if (!ivB64 || !dataB64 || !tagB64) return null;
-    try {
-            const decipher = crypto.createDecipheriv(
-        'aes-256-gcm',
-        key,
-        Buffer.from(ivB64, 'base64url'),
-      );
-      decipher.setAuthTag(Buffer.from(tagB64, 'base64url'));
-            const decrypted = Buffer.concat([
-        decipher.update(Buffer.from(dataB64, 'base64url')),
-        decipher.final(),
-      ]);
-      return decrypted.toString('utf8');
-    } catch {
-      return null;
-    }
-  }
+  static decryptProviderApiKey = decryptProviderApiKey;
 
     static isAutoSelection(providerId?: string, model?: string): boolean {
         const normalizedProvider = String(providerId || '').trim().toLowerCase();
@@ -141,35 +133,32 @@ export class LLMFactory {
 
     static async getProviderConfig(providerId?: string): Promise<typeof providerConfigs.$inferSelect | null> {
     if (providerId && providerId.trim() && providerId.trim().toLowerCase() !== 'auto') {
-            const byId = await db.query.providerConfigs.findFirst({
-        where: eq(providerConfigs.id, providerId.trim()),
-      });
+      const byId = await ProviderConfigRepo.findById(providerId.trim());
       if (byId) return byId;
     }
 
-        const byDefault = await db.query.providerConfigs.findFirst({
-      where: eq(providerConfigs.isDefault, true),
-    });
+    const byDefault = await ProviderConfigRepo.findDefault();
     if (byDefault) return byDefault;
 
-        const first = await db.query.providerConfigs.findFirst();
+    const first = await ProviderConfigRepo.findFirst();
     return first || null;
   }
 
-  static createProviderFromConfig(
+  static async createProviderFromConfig(
     config: typeof providerConfigs.$inferSelect,
     overriddenModel?: string,
-  ): ILLMProvider {
-        const m = this.resolveModel(config.provider, config.model, overriddenModel);
-        const apiKey = this.decryptProviderApiKey(config.apiKey);
+  ): Promise<ILLMProvider> {
+    const normalizedConfig = await ProviderConfigRepo.maybeMigratePlaintextApiKey(config);
+    const m = this.resolveModel(normalizedConfig?.provider || config.provider, normalizedConfig?.model || config.model, overriddenModel);
+    const apiKey = await this.decryptProviderApiKey(normalizedConfig?.apiKey);
 
-    switch (config.provider) {
+    switch (normalizedConfig?.provider || config.provider) {
       case 'ollama': {
-                const base = this.normalizeProviderBaseUrl('ollama', config.baseUrl || getRuntimeConfig().ollamaUrl);
+        const base = this.normalizeProviderBaseUrl('ollama', normalizedConfig?.baseUrl || getRuntimeConfig().ollamaUrl);
         return new OllamaProvider(m, base, apiKey || undefined);
       }
       case 'ollama_cloud': {
-                const base = this.normalizeProviderBaseUrl('ollama_cloud', config.baseUrl || 'https://ollama.com');
+        const base = this.normalizeProviderBaseUrl('ollama_cloud', normalizedConfig?.baseUrl || 'https://ollama.com');
         return new OllamaProvider(m, base, apiKey || undefined);
       }
       case 'gemini':
@@ -178,21 +167,21 @@ export class LLMFactory {
         return new OpenAIProvider(
           m,
           apiKey || '',
-          this.normalizeProviderBaseUrl('openai', config.baseUrl),
+          this.normalizeProviderBaseUrl('openai', normalizedConfig?.baseUrl),
         );
       case 'mistral':
       case 'groq':
         return new OpenAIProvider(
           m,
           apiKey || '',
-          this.normalizeProviderBaseUrl(config.provider, config.baseUrl),
+          this.normalizeProviderBaseUrl(normalizedConfig?.provider || config.provider, normalizedConfig?.baseUrl),
         );
       default:
-        if (config.provider !== 'ollama') {
+        if ((normalizedConfig?.provider || config.provider) !== 'ollama') {
           return new OpenAIProvider(
             m,
             apiKey || '',
-            this.normalizeProviderBaseUrl('openai', config.baseUrl),
+            this.normalizeProviderBaseUrl('openai', normalizedConfig?.baseUrl),
           );
         }
         return new OllamaProvider(m, getRuntimeConfig().ollamaUrl, apiKey || undefined);

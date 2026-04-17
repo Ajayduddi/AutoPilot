@@ -1,10 +1,25 @@
 /**
  * @fileoverview middleware/auth.middleware.
  *
- * Cross-cutting HTTP middleware for security, auth, tracing, and input handling.
+ * High-level purpose:
+ * Cross-cutting HTTP middleware for security, validation, tracing, and request policy enforcement.
+ *
+ * Key Features (and trade-offs):
+ * - Composes request guards before handlers execute.
+ * - Standardizes auth, CSRF, headers, and error boundaries.
+ * - Provides reusable policy units across API routes.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Mount middleware in bootstrap with explicit ordering.
+ * 3. Keep middleware focused on request/response concerns.
+ * 4. Regression-test security-sensitive changes.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import { NextFunction, Request, Response } from 'express';
-import { AuthService, toSafeUser } from '../services/auth.service';
+import { AuthService, toSafeUser } from '../services/auth/auth.service';
 
 /**
  * Resolves authenticated user context from session cookies.
@@ -19,10 +34,17 @@ import { AuthService, toSafeUser } from '../services/auth.service';
  */
 export async function authMiddleware(req: Request, _res: Response, next: NextFunction) {
   try {
-        const resolved = await AuthService.getSessionUserFromCookie(req.headers.cookie);
-    if (resolved?.user) {
+    const resolved = await AuthService.getSessionUserFromCookie(req.headers.cookie);
+    if (resolved?.user && !resolved.mfaRequired) {
       req.auth = {
         user: toSafeUser(resolved.user),
+        mfaVerified: true,
+      };
+    } else if (resolved?.user && resolved.mfaRequired) {
+      req.auth = {
+        user: toSafeUser(resolved.user),
+        pendingMfaUser: toSafeUser(resolved.user),
+        mfaVerified: false,
       };
     } else {
       req.auth = undefined;
@@ -44,6 +66,9 @@ export async function authMiddleware(req: Request, _res: Response, next: NextFun
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.auth?.user) {
     return res.status(401).json({ error: 'Authentication required' });
+  }
+  if (req.auth.mfaVerified === false) {
+    return res.status(401).json({ error: 'MFA verification required' });
   }
   next();
 }

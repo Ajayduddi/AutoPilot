@@ -1,7 +1,22 @@
 /**
  * @fileoverview services/temporal.service.
  *
- * Deterministic date/time intent detection and timezone-aware response formatting.
+ * High-level purpose:
+ * Application/business orchestration services for domain workflows and integrations.
+ *
+ * Key Features (and trade-offs):
+ * - Encapsulates domain logic behind testable service APIs.
+ * - Coordinates provider calls, repository access, and policy checks.
+ * - Provides reusable units consumed by routes and background flows.
+ * - Trade-off: abstraction centralization requires disciplined boundaries to
+ *   avoid hidden coupling across domains.
+ *
+ * Usage Guide:
+ * 1. Import this module through backend domain boundaries.
+ * 2. Keep side effects localized and explicit in service methods.
+ * 3. Prefer dependency reuse over duplicating orchestration logic.
+ * 4. Validate behavior with targeted service tests.
+ * 5. Keep documentation aligned with behavior and tests.
  */
 import { getRuntimeConfig } from "../config/runtime.config";
 
@@ -26,6 +41,12 @@ export type TemporalAnswer = {
   timezoneUsed?: string;
   source?: 'deterministic_clock';
   generatedAt?: string;
+};
+
+export type RuntimeClockContext = {
+  text: string;
+  iso: string;
+  timezoneUsed: string;
 };
 
 const WEEKDAY_INDEX: Record<string, number> = {
@@ -151,7 +172,7 @@ export class TemporalService {
     return isValidTimezone(v) ? v : null;
   }
 
-    static answerIfTemporal(message: string, input: TemporalResolutionInput): TemporalAnswer {
+  static answerIfTemporal(message: string, input: TemporalResolutionInput): TemporalAnswer {
     if (!isTemporalQuery(message)) return { detected: false };
 
         const timezone = resolveTimezone(input);
@@ -191,6 +212,16 @@ export class TemporalService {
       timezoneUsed: timezone,
       source: 'deterministic_clock',
       generatedAt: now.toISOString(),
+    };
+  }
+
+  static buildRuntimeClockContext(input: TemporalResolutionInput): RuntimeClockContext {
+    const timezone = resolveTimezone(input);
+    const now = new Date();
+    return {
+      text: `Deterministic runtime clock: today in ${timezone} is ${formatDateInTimezone(now, timezone)} and the current time is ${formatTimeInTimezone(now, timezone)}.`,
+      iso: now.toISOString(),
+      timezoneUsed: timezone,
     };
   }
 }
