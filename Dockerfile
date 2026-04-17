@@ -42,7 +42,9 @@ COPY --from=build /app/apps/backend/src/db/migrations /app/apps/backend/src/db/m
 COPY --from=build /app/apps/backend/src/db/migrations /app/apps/backend/dist/db/migrations
 COPY --from=build /app/apps/frontend/.output/public /app/public
 
-RUN find /app -name "*.map" -type f -delete \
+RUN addgroup -S autopilot \
+  && adduser -S -G autopilot -h /home/autopilot autopilot \
+  && find /app -name "*.map" -type f -delete \
   && rm -rf /root/.bun/install/cache /tmp/* \
   && mkdir -p /home/autopilot/.autopilot /tmp \
   && chmod 1777 /tmp \
